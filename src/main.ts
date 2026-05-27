@@ -1,0 +1,35 @@
+import { NestFactory } from '@nestjs/core';
+import { Logger } from '@nestjs/common';
+import morgan from 'morgan';
+import { AppModule } from './app.module';
+import { config } from './core/config/env.config';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const logger = new Logger('Bootstrap');
+
+  app.getHttpAdapter().getInstance().set('query parser', 'extended');
+
+  app.use(helmet());
+  app.use(cookieParser());
+
+  app.use(
+    morgan(
+      '📨 :method :url :status :res[content-length] - :response-time ms - :remote-addr',
+    ),
+  );
+
+  app.enableCors({
+    origin: [...config.ALLOWED_ORIGINS, config.FRONTEND_URL].filter(Boolean),
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
+  await app.listen(config.PORT, '0.0.0.0');
+  logger.log(`🚀 Application is running on: http://0.0.0.0:${config.PORT}`);
+  logger.log(`🌍 Environment: ${config.NODE_ENV}`);
+}
+bootstrap();

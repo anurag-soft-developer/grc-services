@@ -1,0 +1,1 @@
+export { OtpEmailTemplate } from './email/otp-email';

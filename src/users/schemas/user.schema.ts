@@ -1,0 +1,161 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+import type { IUser, IOAuthStrategy } from '../interfaces/user.interface';
+import { UserRole } from '../../auth/decorators/roles.decorator';
+
+export type UserDocument = Omit<
+  IUser,
+  '_id' | 'lastLogin' | 'createdAt' | 'updatedAt'
+> &
+  Document & {
+    lastLogin?: Date;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+
+export enum OAuthProvider {
+  GOOGLE = 'google',
+  FACEBOOK = 'facebook',
+  GITHUB = 'github',
+  TWITTER = 'twitter',
+  LINKEDIN = 'linkedin',
+}
+
+export enum OtpKeys {
+  VERIFY_EMAIL = 'verify_email',
+  FORGOT_PASSWORD = 'forgot_password',
+  LOGIN_2FA = 'login_2fa',
+  CHANGE_PASSWORD = 'change_password',
+  UPDATE_2FA = 'update_2fa',
+}
+
+export const userSelectFields: string = '_id fullName avatar email';
+
+@Schema({
+  timestamps: true,
+  toJSON: {
+    transform: function (doc, ret) {
+      return ret;
+    },
+  },
+})
+export class User extends Document implements UserDocument {
+  @Prop({
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true,
+    trim: true,
+  })
+  email!: string;
+
+  @Prop({
+    type: String,
+  })
+  password?: string;
+
+  @Prop({
+    type: String,
+    enum: Object.values(UserRole),
+    default: UserRole.USER,
+  })
+  role!: string;
+
+  @Prop({
+    type: [
+      {
+        provider: {
+          type: String,
+          enum: Object.values(OAuthProvider),
+        },
+        id: String,
+        accessToken: String,
+        refreshToken: String,
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
+    default: [],
+  })
+  oAuthStrategies?: IOAuthStrategy[];
+
+  @Prop({
+    type: String,
+    trim: true,
+  })
+  fullName?: string;
+
+  @Prop({
+    type: String,
+  })
+  avatar?: string;
+
+  @Prop({
+    type: Boolean,
+    default: true,
+  })
+  isActive?: boolean;
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  isVerified?: boolean;
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  isEmailVerified?: boolean;
+
+  @Prop({
+    type: Boolean,
+    default: false,
+  })
+  twoFactorEnabled?: boolean;
+
+  @Prop({
+    type: String,
+    select: false,
+  })
+  otp?: string;
+
+  @Prop({
+    type: Date,
+    select: false,
+  })
+  otpExpiry?: Date;
+
+  @Prop({
+    type: String,
+  })
+  bio?: string;
+
+  @Prop({
+    type: String,
+  })
+  phone?: string;
+
+  @Prop({
+    type: Date,
+  })
+  lastLogin?: Date;
+
+  @Prop({
+    type: Date,
+    default: Date.now,
+  })
+  createdAt!: Date;
+
+  @Prop({
+    type: Date,
+    default: Date.now,
+  })
+  updatedAt!: Date;
+}
+
+export const UserSchema = SchemaFactory.createForClass(User);
+
+UserSchema.index({ 'oAuthStrategies.provider': 1, 'oAuthStrategies.id': 1 });
