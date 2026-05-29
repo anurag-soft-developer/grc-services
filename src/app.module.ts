@@ -8,7 +8,10 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { RolesGuard } from './auth/guards/roles.guard';
 import { config } from './core/config/env.config';
+import { RunEventsModule } from './run-events/run-events.module';
+import { RunEventParticipantsModule } from './run-event-participants/run-event-participants.module';
 
 @Module({
   imports: [
@@ -16,6 +19,8 @@ import { config } from './core/config/env.config';
     MongooseModule.forRoot(config.MONGODB_URI),
     AuthModule,
     UsersModule,
+    RunEventsModule,
+    RunEventParticipantsModule,
   ],
   controllers: [AppController],
   providers: [
@@ -23,6 +28,10 @@ import { config } from './core/config/env.config';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
     },
     {
       provide: APP_PIPE,

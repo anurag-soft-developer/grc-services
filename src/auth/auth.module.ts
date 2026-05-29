@@ -12,7 +12,11 @@ import { EmailService } from '../core/services/email.service';
 import type { StringValue } from 'ms';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { GoogleStrategy, GoogleMobileStrategy } from './strategies/google.strategy';
+import {
+  GoogleStrategy,
+  GoogleMobileStrategy,
+} from './strategies/google.strategy';
+import { RolesGuard } from './guards/roles.guard';
 
 @Module({
   imports: [
@@ -21,7 +25,7 @@ import { GoogleStrategy, GoogleMobileStrategy } from './strategies/google.strate
     JwtModule.register({
       secret: config.JWT_SECRET,
       signOptions: {
-        expiresIn: config.JWT_EXPIRES_IN as StringValue,
+        expiresIn: config.JWT_EXPIRES_IN,
       },
     }),
   ],
@@ -34,7 +38,8 @@ import { GoogleStrategy, GoogleMobileStrategy } from './strategies/google.strate
     JwtStrategy,
     GoogleStrategy,
     GoogleMobileStrategy,
+    RolesGuard,
   ],
-  exports: [AuthService, JwtAuthService],
+  exports: [AuthService, JwtAuthService, RolesGuard],
 })
 export class AuthModule {}

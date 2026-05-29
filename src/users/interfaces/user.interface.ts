@@ -24,8 +24,10 @@ export interface Profile {
   updatedAt: string;
 }
 
-export interface PublicProfile
-  extends Pick<Profile, '_id' | 'fullName' | 'avatar' | 'bio' | 'isVerified'> {}
+export type PublicProfile = Pick<
+  Profile,
+  '_id' | 'fullName' | 'avatar' | 'bio' | 'isVerified'
+>;
 
 export interface IUser extends Profile {
   password?: string;
