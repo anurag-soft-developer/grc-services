@@ -2,19 +2,21 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
   Query,
 } from '@nestjs/common';
-import { Public } from '../auth/decorators/public.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles, UserRole } from '../auth/decorators/roles.decorator';
+import type { IUser } from '../users/interfaces/user.interface';
 import {
   ListParticipantsDto,
-  ResumeDraftDto,
   SaveParticipantDraftDto,
   SubmitParticipantDto,
+  VerifyRazorpayPaymentDto,
 } from './dto/run-event-participants.dto';
 import { RunEventParticipantsService } from './run-event-participants.service';
 
@@ -24,36 +26,60 @@ export class RunEventParticipantsController {
     private readonly participantsService: RunEventParticipantsService,
   ) {}
 
-  @Public()
-  @Post('run-events/:eventId/participants/draft')
-  async createDraft(@Param('eventId') eventId: string) {
-    return this.participantsService.createDraft(eventId);
+  @Get('run-events/:eventId/participants/draft')
+  async getOrCreateDraft(
+    @Param('eventId') eventId: string,
+    @CurrentUser() user: IUser,
+  ) {
+    return this.participantsService.getOrCreateDraft(
+      eventId,
+      user._id.toString(),
+    );
   }
 
-  @Public()
-  @Get('run-event-participants/draft')
-  async resumeDraft(@Query() query: ResumeDraftDto) {
-    return this.participantsService.resumeDraft(query.token);
-  }
-
-  @Public()
-  @Patch('run-event-participants/:id')
+  @Patch('run-events/:eventId/participants/draft')
   async updateDraft(
-    @Param('id') id: string,
-    @Headers('x-draft-token') draftToken: string,
+    @Param('eventId') eventId: string,
+    @CurrentUser() user: IUser,
     @Body() dto: SaveParticipantDraftDto,
   ) {
-    return this.participantsService.updateDraft(id, draftToken, dto);
+    return this.participantsService.updateDraft(
+      eventId,
+      user._id.toString(),
+      dto,
+    );
   }
 
-  @Public()
-  @Post('run-event-participants/:id/submit')
+  @Post('run-events/:eventId/participants/draft/submit')
   async submit(
-    @Param('id') id: string,
-    @Headers('x-draft-token') draftToken: string,
+    @Param('eventId') eventId: string,
+    @CurrentUser() user: IUser,
     @Body() dto: SubmitParticipantDto,
   ) {
-    return this.participantsService.submit(id, draftToken, dto);
+    return this.participantsService.submit(eventId, user._id.toString(), dto);
+  }
+
+  @Post('run-events/:eventId/participants/draft/create-order')
+  @HttpCode(HttpStatus.CREATED)
+  async createOrder(
+    @Param('eventId') eventId: string,
+    @CurrentUser() user: IUser,
+  ) {
+    return this.participantsService.createOrder(eventId, user._id.toString());
+  }
+
+  @Post('run-events/:eventId/participants/verify-payment')
+  @HttpCode(HttpStatus.OK)
+  async verifyPayment(
+    @Param('eventId') eventId: string,
+    @CurrentUser() user: IUser,
+    @Body() dto: VerifyRazorpayPaymentDto,
+  ) {
+    return this.participantsService.verifyPayment(
+      eventId,
+      user._id.toString(),
+      dto,
+    );
   }
 
   @Roles(UserRole.ADMIN)

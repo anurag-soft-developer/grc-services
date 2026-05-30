@@ -1,6 +1,15 @@
 export enum ParticipantStatus {
   DRAFT = 'draft',
+  PENDING_PAYMENT = 'pending_payment',
   SUBMITTED = 'submitted',
+  CANCELLED = 'cancelled',
+}
+
+export enum PaymentStatus {
+  PENDING = 'pending',
+  PAID = 'paid',
+  FAILED = 'failed',
+  REFUNDED = 'refunded',
 }
 
 export enum Gender {
@@ -14,6 +23,7 @@ export type CustomQuestionResponseValue = string | string[] | boolean;
 export interface IRunEventParticipant {
   _id: string;
   runEventId: string;
+  userId: string;
   fullName?: string;
   contactNumber?: string;
   gender?: Gender;
@@ -23,9 +33,19 @@ export interface IRunEventParticipant {
   guidelinesAgreed?: boolean;
   customQuestionResponses: Record<string, CustomQuestionResponseValue>;
   status: ParticipantStatus;
-  draftToken: string;
+  totalAmount?: number;
+  paymentStatus: PaymentStatus;
+  paymentId?: string;
+  razorpayOrderId?: string;
+  invoiceId?: string;
+  paidAt?: Date;
+  paymentExpiresAt?: Date;
+  refundId?: string;
+  refundedAt?: Date;
+  refundAmount?: number;
+  cancelReason?: string;
+  cancelledAt?: Date;
   submittedAt?: Date;
-  userId?: string;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -1,4 +1,4 @@
-import { createZodDto } from 'nestjs-zod';
+import { createZodDto, type ZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 import {
   CustomQuestionType,
@@ -53,13 +53,14 @@ const CustomQuestionSchema = z
 
 const RunEventBaseSchema = z.object({
   title: z.string().trim().min(1).max(200),
-  coverImages: z.array(z.string().url()).default([]),
+  coverImages: z.array(z.url()).default([]),
   description: z.string().trim().min(1),
   eventDate: z.coerce.date(),
   reportingTime: z.string().trim().min(1),
   location: LocationInputSchema,
   price: z.number().min(0),
   currency: z.string().trim().min(1).max(10).default('INR'),
+  maxParticipants: z.number().int().min(1),
   inclusions: z.array(z.string().trim().min(1)).default([]),
   guidelines: z.array(z.string().trim().min(1)).default([]),
   customQuestions: z.array(CustomQuestionSchema).default([]),

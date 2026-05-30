@@ -6,124 +6,284 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { randomUUID } from 'crypto';
+import { Model, PopulateOptions } from 'mongoose';
+import type { IRajorpayOrder } from '../core/interfaces/rajorpay.interface';
+import { RajorpayService } from '../core/services/rajorpay/rajorpay.service';
 import type { PaginatedResult } from '../core/interfaces/common';
-import {
-  CustomQuestionType,
-  ICustomQuestion,
-} from '../run-events/interfaces/run-event.interface';
+import { runEventSelectFields } from '../run-events/schemas/run-event.schema';
 import { RunEventsService } from '../run-events/run-events.service';
-import {
-  HEAR_ABOUT_US_OPTIONS,
-  GENDERS,
-} from './constants/common-fields';
+import { userSelectFields } from '../users/schemas/user.schema';
 import {
   SaveParticipantDraftDto,
   SubmitParticipantDto,
+  VerifyRazorpayPaymentDto,
 } from './dto/run-event-participants.dto';
 import {
-  CustomQuestionResponseValue,
-  Gender,
-  IRunEventParticipant,
   ParticipantStatus,
+  PaymentStatus,
 } from './interfaces/run-event-participant.interface';
 import {
   RunEventParticipant,
   RunEventParticipantDocument,
 } from './schemas/run-event-participant.schema';
+import { RunEventParticipantsUtility } from './utility/run-event-participants.utility';
+import { RunEventParticipantsValidationUtility } from './utility/run-event-participants.validation.utility';
 
 @Injectable()
 export class RunEventParticipantsService {
+  static populateOptions: PopulateOptions[] = [
+    {
+      path: 'userId',
+      select: userSelectFields,
+    },
+    {
+      path: 'runEventId',
+      select: runEventSelectFields,
+    },
+  ];
+
   constructor(
     @InjectModel(RunEventParticipant.name)
     private participantModel: Model<RunEventParticipant>,
     private readonly runEventsService: RunEventsService,
+    private readonly rajorpayService: RajorpayService,
   ) {}
 
-  async createDraft(
+  async getOrCreateDraft(
     runEventId: string,
-  ): Promise<{ _id: string; draftToken: string }> {
+    userId: string,
+  ): Promise<RunEventParticipantDocument> {
     await this.runEventsService.assertPublished(runEventId);
+    await this.releaseExpiredPaymentHolds();
 
-    const draftToken = randomUUID();
+    const existingSubmitted = await this.participantModel
+      .findOne({
+        runEventId,
+        userId,
+        status: ParticipantStatus.SUBMITTED,
+      })
+      .exec();
+
+    if (existingSubmitted) {
+      throw new ConflictException(
+        'You have already registered for this event',
+      );
+    }
+
+    const existingActive = await this.participantModel
+      .findOne({
+        runEventId,
+        userId,
+        status: {
+          $in: [ParticipantStatus.DRAFT, ParticipantStatus.PENDING_PAYMENT],
+        },
+      })
+      .populate(RunEventParticipantsService.populateOptions)
+      .exec();
+
+    if (existingActive) {
+      return existingActive;
+    }
+
+    const event = await this.runEventsService.findById(runEventId);
+    await RunEventParticipantsValidationUtility.assertEventHasCapacity(
+      this.participantModel,
+      runEventId,
+      event.maxParticipants,
+    );
+
     const participant = await this.participantModel.create({
       runEventId,
-      draftToken,
+      userId,
       status: ParticipantStatus.DRAFT,
       customQuestionResponses: {},
     });
 
-    return {
-      _id: participant._id.toString(),
-      draftToken,
-    };
-  }
-
-  async resumeDraft(token: string): Promise<IRunEventParticipant> {
-    const participant = await this.participantModel
-      .findOne({ draftToken: token, status: ParticipantStatus.DRAFT })
-      .exec();
-
-    if (!participant) {
-      throw new NotFoundException('Draft not found');
-    }
-
-    return this.toResponse(participant);
+    return participant.populate(RunEventParticipantsService.populateOptions);
   }
 
   async updateDraft(
-    id: string,
-    draftToken: string,
+    runEventId: string,
+    userId: string,
     dto: SaveParticipantDraftDto,
-  ): Promise<IRunEventParticipant> {
-    const participant = await this.findDraftByIdAndToken(id, draftToken);
-    this.applyDraftUpdate(participant, dto);
-    await participant.save();
-    return this.toResponse(participant);
+  ): Promise<RunEventParticipantDocument> {
+    const participant =
+      await RunEventParticipantsUtility.findDraftByEventAndUser(
+        this.participantModel,
+        runEventId,
+        userId,
+      );
+    RunEventParticipantsUtility.applyDraftUpdate(participant, dto);
+    return (await participant.save()).populate(
+      RunEventParticipantsService.populateOptions,
+    );
   }
 
   async submit(
-    id: string,
-    draftToken: string,
+    runEventId: string,
+    userId: string,
     dto: SubmitParticipantDto,
-  ): Promise<IRunEventParticipant> {
-    const participant = await this.findDraftByIdAndToken(id, draftToken);
-    this.applyDraftUpdate(participant, dto);
+  ): Promise<RunEventParticipantDocument> {
+    const participant =
+      await RunEventParticipantsUtility.findDraftByEventAndUser(
+        this.participantModel,
+        runEventId,
+        userId,
+      );
+    RunEventParticipantsUtility.applyDraftUpdate(participant, dto);
 
-    const event = await this.runEventsService.assertPublished(
-      participant.runEventId.toString(),
+    const event = await this.runEventsService.assertPublished(runEventId);
+    RunEventParticipantsValidationUtility.validateSubmission(
+      participant,
+      event.customQuestions ?? [],
     );
 
-    this.validateSubmission(participant, event.customQuestions ?? []);
+    await RunEventParticipantsValidationUtility.assertEventHasCapacity(
+      this.participantModel,
+      runEventId,
+      event.maxParticipants,
+    );
 
-    const duplicate = await this.participantModel
-      .findOne({
-        runEventId: participant.runEventId,
-        contactNumber: participant.contactNumber,
-        status: ParticipantStatus.SUBMITTED,
-        _id: { $ne: participant._id },
-      })
-      .exec();
-
-    if (duplicate) {
-      throw new ConflictException(
-        'A submission with this contact number already exists for this event',
+    if (event.price === 0) {
+      await RunEventParticipantsValidationUtility.assertNoDuplicateSubmission(
+        this.participantModel,
+        runEventId,
+        userId,
+        participant.contactNumber!,
+        participant._id.toString(),
+      );
+      RunEventParticipantsUtility.applyFreeSubmissionFields(participant);
+    } else {
+      RunEventParticipantsUtility.applyPendingPaymentFields(
+        participant,
+        event.price,
       );
     }
 
-    participant.status = ParticipantStatus.SUBMITTED;
-    participant.submittedAt = new Date();
+    return (await participant.save()).populate(
+      RunEventParticipantsService.populateOptions,
+    );
+  }
+
+  async createOrder(
+    runEventId: string,
+    userId: string,
+  ): Promise<{
+    participant: RunEventParticipantDocument;
+    order: IRajorpayOrder;
+  }> {
+    await this.releaseExpiredPaymentHolds();
+
+    const participant =
+      await RunEventParticipantsUtility.findPendingPaymentByEventAndUser(
+        this.participantModel,
+        runEventId,
+        userId,
+      );
+
+    if (RunEventParticipantsValidationUtility.isPaymentHoldExpired(participant)) {
+      throw new BadRequestException(
+        'Payment hold expired. Please submit your registration again.',
+      );
+    }
+
+    if (!participant.totalAmount || participant.totalAmount <= 0) {
+      throw new BadRequestException('This registration does not require payment');
+    }
+
+    const order = await this.rajorpayService.createOrder(
+      participant.totalAmount,
+      `participant_${participant._id.toString()}`,
+    );
+
+    participant.razorpayOrderId = order.id;
     await participant.save();
 
-    return this.toResponse(participant);
+    return {
+      participant: (await participant.populate(
+        RunEventParticipantsService.populateOptions,
+      )) as RunEventParticipantDocument,
+      order,
+    };
+  }
+
+  async verifyPayment(
+    runEventId: string,
+    userId: string,
+    dto: VerifyRazorpayPaymentDto,
+  ): Promise<RunEventParticipantDocument> {
+    await this.releaseExpiredPaymentHolds();
+
+    const participant = await this.participantModel.findById(dto.participantId);
+    if (!participant) {
+      throw new NotFoundException('Participant not found');
+    }
+
+    if (participant.runEventId.toString() !== runEventId) {
+      throw new BadRequestException('Participant does not belong to this event');
+    }
+
+    if (participant.userId.toString() !== userId) {
+      throw new ForbiddenException(
+        'You can only verify your own registration payment',
+      );
+    }
+
+    if (participant.paymentStatus === PaymentStatus.PAID) {
+      return (await participant.populate(
+        RunEventParticipantsService.populateOptions,
+      )) as RunEventParticipantDocument;
+    }
+
+    if (participant.status !== ParticipantStatus.PENDING_PAYMENT) {
+      throw new BadRequestException(
+        'Only pending payment registrations can be paid',
+      );
+    }
+
+    if (RunEventParticipantsValidationUtility.isPaymentHoldExpired(participant)) {
+      throw new BadRequestException(
+        'Payment hold expired. Please submit your registration again.',
+      );
+    }
+
+    if (
+      participant.razorpayOrderId &&
+      participant.razorpayOrderId !== dto.razorpay_order_id
+    ) {
+      throw new BadRequestException(
+        'Payment order does not match this registration',
+      );
+    }
+
+    const isValidSignature = this.rajorpayService.verifyPaymentSignature({
+      razorpayOrderId: dto.razorpay_order_id,
+      razorpayPaymentId: dto.razorpay_payment_id,
+      razorpaySignature: dto.razorpay_signature,
+    });
+    if (!isValidSignature) {
+      throw new BadRequestException('Invalid payment signature');
+    }
+
+    const event = await this.runEventsService.findById(runEventId);
+    await RunEventParticipantsUtility.confirmPaidParticipant(
+      this.participantModel,
+      participant,
+      dto.razorpay_order_id,
+      dto.razorpay_payment_id,
+      event.maxParticipants,
+    );
+
+    return (await participant.populate(
+      RunEventParticipantsService.populateOptions,
+    )) as RunEventParticipantDocument;
   }
 
   async findAllByEvent(
     runEventId: string,
     page = 1,
     limit = 10,
-  ): Promise<PaginatedResult<IRunEventParticipant>> {
+  ): Promise<PaginatedResult<RunEventParticipantDocument>> {
     await this.runEventsService.findById(runEventId);
 
     const filter = {
@@ -138,12 +298,13 @@ export class RunEventParticipantsService {
         .sort({ submittedAt: -1 })
         .skip(skip)
         .limit(limit)
+        .populate(RunEventParticipantsService.populateOptions)
         .exec(),
       this.participantModel.countDocuments(filter).exec(),
     ]);
 
     return {
-      data: participants.map((p) => this.toResponse(p)),
+      data: participants,
       totalDocuments: total,
       page,
       limit,
@@ -151,185 +312,90 @@ export class RunEventParticipantsService {
     };
   }
 
-  async findById(id: string): Promise<IRunEventParticipant> {
-    const participant = await this.participantModel.findById(id).exec();
+  async findById(id: string): Promise<RunEventParticipantDocument> {
+    const participant = await this.participantModel
+      .findById(id)
+      .populate(RunEventParticipantsService.populateOptions)
+      .exec();
     if (!participant) {
       throw new NotFoundException('Participant not found');
     }
-    return this.toResponse(participant);
-  }
-
-  private async findDraftByIdAndToken(
-    id: string,
-    draftToken: string,
-  ): Promise<RunEventParticipantDocument> {
-    const participant = await this.participantModel.findById(id).exec();
-
-    if (!participant) {
-      throw new NotFoundException('Participant not found');
-    }
-
-    if (participant.status !== ParticipantStatus.DRAFT) {
-      throw new BadRequestException(
-        'This registration has already been submitted',
-      );
-    }
-
-    if (participant.draftToken !== draftToken) {
-      throw new ForbiddenException('Invalid draft token');
-    }
-
     return participant;
   }
 
-  private applyDraftUpdate(
-    participant: RunEventParticipantDocument,
-    dto: SaveParticipantDraftDto,
-  ): void {
-    if (dto.fullName !== undefined) participant.fullName = dto.fullName;
-    if (dto.contactNumber !== undefined) {
-      participant.contactNumber = dto.contactNumber;
+  async confirmPaidParticipantByOrderId(
+    orderId: string,
+    paymentId: string,
+  ): Promise<void> {
+    const participant = await this.participantModel
+      .findOne({ razorpayOrderId: orderId })
+      .exec();
+    if (!participant || participant.paymentStatus === PaymentStatus.PAID) {
+      return;
     }
-    if (dto.gender !== undefined) {
-      participant.gender = dto.gender as Gender;
+    if (participant.status !== ParticipantStatus.PENDING_PAYMENT) {
+      return;
     }
-    if (dto.instagramHandle !== undefined) {
-      participant.instagramHandle = dto.instagramHandle;
-    }
-    if (dto.city !== undefined) participant.city = dto.city;
-    if (dto.howDidYouHearAboutUs !== undefined) {
-      participant.howDidYouHearAboutUs = dto.howDidYouHearAboutUs;
-    }
-    if (dto.guidelinesAgreed !== undefined) {
-      participant.guidelinesAgreed = dto.guidelinesAgreed;
-    }
-
-    if (dto.customQuestionResponses) {
-      participant.customQuestionResponses = {
-        ...participant.customQuestionResponses,
-        ...dto.customQuestionResponses,
-      };
-      participant.markModified('customQuestionResponses');
-    }
-  }
-
-  private validateSubmission(
-    participant: RunEventParticipantDocument,
-    customQuestions: ICustomQuestion[],
-  ): void {
-    if (!participant.fullName?.trim()) {
-      throw new BadRequestException('Full name is required');
-    }
-    if (!participant.contactNumber?.trim()) {
-      throw new BadRequestException('Contact number is required');
-    }
-    if (!participant.gender || !GENDERS.includes(participant.gender)) {
-      throw new BadRequestException('Valid gender is required');
-    }
-    if (!participant.instagramHandle?.trim()) {
-      throw new BadRequestException('Instagram handle is required');
-    }
-    if (!participant.city?.trim()) {
-      throw new BadRequestException('City is required');
-    }
-    if (
-      !participant.howDidYouHearAboutUs?.length ||
-      !participant.howDidYouHearAboutUs.every((v) =>
-        (HEAR_ABOUT_US_OPTIONS as readonly string[]).includes(v),
-      )
-    ) {
-      throw new BadRequestException(
-        'At least one valid "how did you hear about us" option is required',
-      );
-    }
-    if (participant.guidelinesAgreed !== true) {
-      throw new BadRequestException('You must agree to the guidelines');
-    }
-
-    this.validateCustomQuestionResponses(
-      customQuestions,
-      this.getResponsesRecord(participant),
+    const event = await this.runEventsService.findById(
+      participant.runEventId.toString(),
+    );
+    await RunEventParticipantsUtility.confirmPaidParticipant(
+      this.participantModel,
+      participant,
+      orderId,
+      paymentId,
+      event.maxParticipants,
     );
   }
 
-  private validateCustomQuestionResponses(
-    customQuestions: ICustomQuestion[],
-    responses: Record<string, CustomQuestionResponseValue>,
-  ): void {
-    for (const question of customQuestions) {
-      const value = responses[question.key];
-
-      if (
-        question.required &&
-        (value === undefined || value === null || value === '')
-      ) {
-        throw new BadRequestException(
-          `Response required for question: ${question.label}`,
-        );
-      }
-
-      if (value === undefined || value === null || value === '') {
-        continue;
-      }
-
-      switch (question.type) {
-        case CustomQuestionType.TEXT:
-        case CustomQuestionType.TEXTAREA:
-          if (typeof value !== 'string' || !value.trim()) {
-            throw new BadRequestException(
-              `Invalid response for question: ${question.label}`,
-            );
-          }
-          break;
-
-        case CustomQuestionType.SELECT:
-        case CustomQuestionType.RADIO:
-          if (typeof value !== 'string' || !question.options?.includes(value)) {
-            throw new BadRequestException(
-              `Invalid response for question: ${question.label}`,
-            );
-          }
-          break;
-
-        case CustomQuestionType.CHECKBOX:
-          if (
-            !Array.isArray(value) ||
-            !value.length ||
-            !value.every((v) => question.options?.includes(v))
-          ) {
-            throw new BadRequestException(
-              `Invalid response for question: ${question.label}`,
-            );
-          }
-          break;
-      }
+  async applyFailedPaymentByOrderId(orderId: string): Promise<void> {
+    const participant = await this.participantModel
+      .findOne({ razorpayOrderId: orderId })
+      .exec();
+    if (!participant || participant.status !== ParticipantStatus.PENDING_PAYMENT) {
+      return;
     }
+
+    RunEventParticipantsUtility.applyFailedPaymentFields(
+      participant,
+      'Payment failed via Razorpay webhook',
+    );
+    await participant.save();
   }
 
-  private getResponsesRecord(
-    participant: RunEventParticipantDocument,
-  ): Record<string, CustomQuestionResponseValue> {
-    return participant.customQuestionResponses ?? {};
+  async applyRefundWebhook(params: {
+    paymentId: string;
+    event: string;
+    refundId?: string;
+    refundAmount?: number;
+  }): Promise<void> {
+    const participant = await this.participantModel
+      .findOne({ paymentId: params.paymentId })
+      .exec();
+    if (!participant) {
+      return;
+    }
+
+    RunEventParticipantsUtility.applyRefundFields(participant, params);
+    await participant.save();
   }
 
-  toResponse(participant: RunEventParticipantDocument): IRunEventParticipant {
-    return {
-      _id: participant._id.toString(),
-      runEventId: participant.runEventId.toString(),
-      fullName: participant.fullName,
-      contactNumber: participant.contactNumber,
-      gender: participant.gender,
-      instagramHandle: participant.instagramHandle,
-      city: participant.city,
-      howDidYouHearAboutUs: participant.howDidYouHearAboutUs ?? [],
-      guidelinesAgreed: participant.guidelinesAgreed,
-      customQuestionResponses: this.getResponsesRecord(participant),
-      status: participant.status,
-      draftToken: participant.draftToken,
-      submittedAt: participant.submittedAt,
-      userId: participant.userId?.toString(),
-      createdAt: participant.createdAt,
-      updatedAt: participant.updatedAt,
-    };
+  async releaseExpiredPaymentHolds(): Promise<void> {
+    const now = new Date();
+    await this.participantModel.updateMany(
+      {
+        status: ParticipantStatus.PENDING_PAYMENT,
+        paymentExpiresAt: { $lte: now },
+      },
+      {
+        $set: {
+          status: ParticipantStatus.CANCELLED,
+          paymentStatus: PaymentStatus.FAILED,
+          cancelledAt: now,
+          cancelReason: 'Payment was not confirmed in time',
+        },
+        $unset: { paymentExpiresAt: '' },
+      },
+    );
   }
 }

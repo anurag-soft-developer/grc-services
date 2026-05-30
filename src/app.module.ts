@@ -12,6 +12,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { config } from './core/config/env.config';
 import { RunEventsModule } from './run-events/run-events.module';
 import { RunEventParticipantsModule } from './run-event-participants/run-event-participants.module';
+import { StorageModule } from './storage/storage.module';
+import { WebhookModule } from './webhook/webhook.module';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { RunEventParticipantsModule } from './run-event-participants/run-event-p
     UsersModule,
     RunEventsModule,
     RunEventParticipantsModule,
+    StorageModule,
+    WebhookModule,
   ],
   controllers: [AppController],
   providers: [

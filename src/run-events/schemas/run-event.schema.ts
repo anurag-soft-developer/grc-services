@@ -9,6 +9,9 @@ import {
   RunEventStatus,
 } from '../interfaces/run-event.interface';
 
+export const runEventSelectFields: string =
+  '_id title slug eventDate reportingTime location price currency maxParticipants status';
+
 export type RunEventDocument = Omit<
   IRunEvent,
   '_id' | 'createdBy' | 'createdAt' | 'updatedAt' | 'eventDate' | 'location'
@@ -62,6 +65,17 @@ export class RunEventLocation implements Omit<IRunEventLocation, 'lat' | 'long'>
 
 const RunEventLocationSchema = SchemaFactory.createForClass(RunEventLocation);
 
+RunEventLocationSchema.virtual('lat').get(function (this: RunEventLocation) {
+  return this.geo.coordinates[1];
+});
+
+RunEventLocationSchema.virtual('long').get(function (this: RunEventLocation) {
+  return this.geo.coordinates[0];
+});
+
+RunEventLocationSchema.set('toJSON', { virtuals: true });
+RunEventLocationSchema.set('toObject', { virtuals: true });
+
 @Schema({ _id: false })
 export class CustomQuestion implements ICustomQuestion {
   @Prop({ type: String, required: true, trim: true })
@@ -92,6 +106,7 @@ const CustomQuestionSchema = SchemaFactory.createForClass(CustomQuestion);
 @Schema({
   timestamps: true,
   toJSON: {
+    virtuals: true,
     transform: function (_doc, ret) {
       return ret;
     },
@@ -136,6 +151,9 @@ export class RunEvent extends Document {
     uppercase: true,
   })
   currency!: string;
+
+  @Prop({ type: Number, required: true, min: 1 })
+  maxParticipants!: number;
 
   @Prop({ type: [String], default: [] })
   inclusions!: string[];

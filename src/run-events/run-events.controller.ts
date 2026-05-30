@@ -28,8 +28,7 @@ export class RunEventsController {
   @Roles(UserRole.ADMIN)
   @Post()
   async create(@CurrentUser() user: IUser, @Body() dto: CreateRunEventDto) {
-    const event = await this.runEventsService.create(dto, user._id.toString());
-    return this.runEventsService.toResponse(event);
+    return this.runEventsService.create(dto, user._id.toString());
   }
 
   @Roles(UserRole.ADMIN)
@@ -62,7 +61,7 @@ export class RunEventsController {
   async findPublishedBySlug(@Param('slug') slug: string) {
     const event = await this.runEventsService.findPublishedBySlug(slug);
     return {
-      ...this.runEventsService.toResponse(event),
+      ...event.toJSON(),
       commonFields: COMMON_FIELDS,
     };
   }
@@ -70,29 +69,25 @@ export class RunEventsController {
   @Roles(UserRole.ADMIN)
   @Get(':id')
   async findById(@Param('id') id: string) {
-    const event = await this.runEventsService.findById(id);
-    return this.runEventsService.toResponse(event);
+    return this.runEventsService.findById(id);
   }
 
   @Roles(UserRole.ADMIN)
   @Patch(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateRunEventDto) {
-    const event = await this.runEventsService.update(id, dto);
-    return this.runEventsService.toResponse(event);
+    return this.runEventsService.update(id, dto);
   }
 
   @Roles(UserRole.ADMIN)
   @Patch(':id/publish')
   async publish(@Param('id') id: string) {
-    const event = await this.runEventsService.publish(id);
-    return this.runEventsService.toResponse(event);
+    return this.runEventsService.publish(id);
   }
 
   @Roles(UserRole.ADMIN)
   @Patch(':id/close')
   async close(@Param('id') id: string) {
-    const event = await this.runEventsService.close(id);
-    return this.runEventsService.toResponse(event);
+    return this.runEventsService.close(id);
   }
 
   @Roles(UserRole.ADMIN)

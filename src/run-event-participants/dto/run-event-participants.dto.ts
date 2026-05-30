@@ -1,4 +1,4 @@
-import { createZodDto } from 'nestjs-zod';
+import { createZodDto , type ZodDto} from 'nestjs-zod';
 import { z } from 'zod';
 import { GENDERS, HEAR_ABOUT_US_OPTIONS } from '../constants/common-fields';
 import { Gender } from '../interfaces/run-event-participant.interface';
@@ -34,10 +34,15 @@ const ListParticipantsSchema = z.object({
 
 export class ListParticipantsDto extends createZodDto(ListParticipantsSchema) {}
 
-const ResumeDraftSchema = z.object({
-  token: z.string().trim().min(1),
+const VerifyRazorpayPaymentSchema = z.object({
+  participantId: z.string().min(1, 'Participant ID is required'),
+  razorpay_order_id: z.string().min(1, 'Razorpay order id is required'),
+  razorpay_payment_id: z.string().min(1, 'Razorpay payment id is required'),
+  razorpay_signature: z.string().min(1, 'Razorpay signature is required'),
 });
 
-export class ResumeDraftDto extends createZodDto(ResumeDraftSchema) {}
+export class VerifyRazorpayPaymentDto extends createZodDto(
+  VerifyRazorpayPaymentSchema,
+) {}
 
 export { Gender, ParticipantFieldsSchema, CustomQuestionResponsesSchema };

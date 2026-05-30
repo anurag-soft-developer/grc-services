@@ -5,16 +5,30 @@ import {
   Gender,
   IRunEventParticipant,
   ParticipantStatus,
+  PaymentStatus,
 } from '../interfaces/run-event-participant.interface';
 
 export type RunEventParticipantDocument = Omit<
   IRunEventParticipant,
-  '_id' | 'runEventId' | 'userId' | 'createdAt' | 'updatedAt' | 'submittedAt'
+  | '_id'
+  | 'runEventId'
+  | 'userId'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'submittedAt'
+  | 'paidAt'
+  | 'paymentExpiresAt'
+  | 'refundedAt'
+  | 'cancelledAt'
 > &
   Document & {
     runEventId: Types.ObjectId;
-    userId?: Types.ObjectId;
+    userId: Types.ObjectId;
     submittedAt?: Date;
+    paidAt?: Date;
+    paymentExpiresAt?: Date;
+    refundedAt?: Date;
+    cancelledAt?: Date;
     createdAt: Date;
     updatedAt: Date;
   };
@@ -30,6 +44,9 @@ export type RunEventParticipantDocument = Omit<
 export class RunEventParticipant extends Document {
   @Prop({ type: Types.ObjectId, ref: 'RunEvent', required: true, index: true })
   runEventId!: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  userId!: Types.ObjectId;
 
   @Prop({ type: String, trim: true })
   fullName?: string;
@@ -65,14 +82,48 @@ export class RunEventParticipant extends Document {
   })
   status!: ParticipantStatus;
 
-  @Prop({ type: String, required: true, index: true })
-  draftToken!: string;
+  @Prop({ type: Number, min: 0 })
+  totalAmount?: number;
+
+  @Prop({
+    type: String,
+    enum: Object.values(PaymentStatus),
+    default: PaymentStatus.PENDING,
+  })
+  paymentStatus!: PaymentStatus;
+
+  @Prop({ type: String })
+  paymentId?: string;
+
+  @Prop({ type: String })
+  razorpayOrderId?: string;
+
+  @Prop({ type: String })
+  invoiceId?: string;
+
+  @Prop({ type: Date })
+  paidAt?: Date;
+
+  @Prop({ type: Date })
+  paymentExpiresAt?: Date;
+
+  @Prop({ type: String })
+  refundId?: string;
+
+  @Prop({ type: Date })
+  refundedAt?: Date;
+
+  @Prop({ type: Number, min: 0 })
+  refundAmount?: number;
+
+  @Prop({ type: String, maxlength: 200 })
+  cancelReason?: string;
+
+  @Prop({ type: Date })
+  cancelledAt?: Date;
 
   @Prop({ type: Date })
   submittedAt?: Date;
-
-  @Prop({ type: Types.ObjectId, ref: 'User' })
-  userId?: Types.ObjectId;
 
   createdAt!: Date;
   updatedAt!: Date;
@@ -92,4 +143,36 @@ RunEventParticipantSchema.index(
   },
 );
 
-RunEventParticipantSchema.index({ draftToken: 1 });
+RunEventParticipantSchema.index(
+  { runEventId: 1, userId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: ParticipantStatus.DRAFT,
+    },
+  },
+);
+
+RunEventParticipantSchema.index(
+  { runEventId: 1, userId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: ParticipantStatus.SUBMITTED,
+    },
+  },
+);
+
+RunEventParticipantSchema.index(
+  { runEventId: 1, userId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: ParticipantStatus.PENDING_PAYMENT,
+    },
+  },
+);
+
+RunEventParticipantSchema.index({ razorpayOrderId: 1 });
+RunEventParticipantSchema.index({ paymentId: 1 });
+RunEventParticipantSchema.index({ status: 1, paymentExpiresAt: 1 });

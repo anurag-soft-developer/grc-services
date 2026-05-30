@@ -54,6 +54,7 @@ export interface IRunEvent {
   location: IRunEventLocation;
   price: number;
   currency: string;
+  maxParticipants: number;
   inclusions: string[];
   guidelines: string[];
   customQuestions: ICustomQuestion[];

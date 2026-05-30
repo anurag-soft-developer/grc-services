@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { RajorpayService } from '../core/services/rajorpay/rajorpay.service';
 import { RunEventsModule } from '../run-events/run-events.module';
 import {
   RunEventParticipant,
@@ -16,6 +17,7 @@ import { RunEventParticipantsService } from './run-event-participants.service';
     RunEventsModule,
   ],
   controllers: [RunEventParticipantsController],
-  providers: [RunEventParticipantsService],
+  providers: [RunEventParticipantsService, RajorpayService],
+  exports: [RunEventParticipantsService],
 })
 export class RunEventParticipantsModule {}
