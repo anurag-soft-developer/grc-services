@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { User } from '../../users/schemas/user.schema';
 import {
   CustomQuestionType,
   ICustomQuestion,
@@ -171,7 +172,7 @@ export class RunEvent extends Document {
   })
   status!: RunEventStatus;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: Types.ObjectId, ref: User.name, required: true })
   createdBy!: Types.ObjectId;
 
   createdAt!: Date;

@@ -1,5 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
+import { RunEvent } from '../../run-events/schemas/run-event.schema';
+import { User } from '../../users/schemas/user.schema';
 import {
   CustomQuestionResponseValue,
   Gender,
@@ -42,10 +44,10 @@ export type RunEventParticipantDocument = Omit<
   },
 })
 export class RunEventParticipant extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'RunEvent', required: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: RunEvent.name, required: true })
   runEventId!: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({ type: Types.ObjectId, ref: User.name, required: true })
   userId!: Types.ObjectId;
 
   @Prop({ type: String, trim: true })
@@ -148,27 +150,13 @@ RunEventParticipantSchema.index(
   {
     unique: true,
     partialFilterExpression: {
-      status: ParticipantStatus.DRAFT,
-    },
-  },
-);
-
-RunEventParticipantSchema.index(
-  { runEventId: 1, userId: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      status: ParticipantStatus.SUBMITTED,
-    },
-  },
-);
-
-RunEventParticipantSchema.index(
-  { runEventId: 1, userId: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      status: ParticipantStatus.PENDING_PAYMENT,
+      status: {
+        $in: [
+          ParticipantStatus.DRAFT,
+          ParticipantStatus.SUBMITTED,
+          ParticipantStatus.PENDING_PAYMENT,
+        ],
+      },
     },
   },
 );
