@@ -1,8 +1,9 @@
 export enum RunEventStatus {
   DRAFT = 'draft',
   PUBLISHED = 'published',
-  CLOSED = 'closed',
 }
+
+export type PublicRunEventSegment = 'upcoming' | 'closed';
 
 export enum CustomQuestionType {
   TEXT = 'text',
@@ -59,6 +60,12 @@ export interface IRunEvent {
   guidelines: string[];
   customQuestions: ICustomQuestion[];
   status: RunEventStatus;
+  isClosed: boolean;
+  closedAt?: Date | null;
+  publishedAt?: Date | null;
+  archive: boolean;
+  registrationsPaused: boolean;
+  registeredCount: number;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;

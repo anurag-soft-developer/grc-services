@@ -41,13 +41,16 @@ export class RunEventsController {
       query.lat,
       query.long,
       query.maxDistanceMeters,
+      query.isClosed,
+      query.archive,
     );
   }
 
   @Public()
   @Get('public')
-  async findPublished(@Query() query: ListPublishedRunEventsDto) {
-    return this.runEventsService.findPublished(
+  async findPublic(@Query() query: ListPublishedRunEventsDto) {
+    return this.runEventsService.findPublic(
+      query.segment,
       query.page,
       query.limit,
       query.lat,
@@ -88,6 +91,24 @@ export class RunEventsController {
   @Patch(':id/close')
   async close(@Param('id') id: string) {
     return this.runEventsService.close(id);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/archive')
+  async archive(@Param('id') id: string) {
+    return this.runEventsService.archive(id);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/pause-registrations')
+  async pauseRegistrations(@Param('id') id: string) {
+    return this.runEventsService.pauseRegistrations(id);
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/resume-registrations')
+  async resumeRegistrations(@Param('id') id: string) {
+    return this.runEventsService.resumeRegistrations(id);
   }
 
   @Roles(UserRole.ADMIN)

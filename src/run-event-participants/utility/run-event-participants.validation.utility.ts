@@ -117,28 +117,6 @@ export class RunEventParticipantsValidationUtility {
     }
   }
 
-  static async assertEventHasCapacity(
-    participantModel: Model<RunEventParticipant>,
-    runEventId: string,
-    maxParticipants: number,
-    excludeParticipantId?: string,
-  ): Promise<void> {
-    const filter: Record<string, unknown> = {
-      runEventId,
-      status: {
-        $in: [ParticipantStatus.SUBMITTED, ParticipantStatus.PENDING_PAYMENT],
-      },
-    };
-    if (excludeParticipantId) {
-      filter._id = { $ne: excludeParticipantId };
-    }
-
-    const registeredCount = await participantModel.countDocuments(filter).exec();
-    if (registeredCount >= maxParticipants) {
-      throw new ConflictException('This event has reached maximum participants');
-    }
-  }
-
   static async assertNoDuplicateSubmission(
     participantModel: Model<RunEventParticipant>,
     runEventId: string,

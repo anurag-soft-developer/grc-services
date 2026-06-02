@@ -162,7 +162,6 @@ export class RunEventParticipantsUtility {
     participant: RunEventParticipantDocument,
     razorpayOrderId: string,
     razorpayPaymentId: string,
-    maxParticipants: number,
   ): Promise<void> {
     if (participant.paymentStatus === PaymentStatus.PAID) {
       return;
@@ -173,13 +172,6 @@ export class RunEventParticipantsUtility {
       participant.runEventId.toString(),
       participant.userId.toString(),
       participant.contactNumber!,
-      participant._id.toString(),
-    );
-
-    await RunEventParticipantsValidationUtility.assertEventHasCapacity(
-      participantModel,
-      participant.runEventId.toString(),
-      maxParticipants,
       participant._id.toString(),
     );
 

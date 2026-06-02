@@ -68,9 +68,11 @@ const RunEventBaseSchema = z.object({
 
 export class CreateRunEventDto extends createZodDto(RunEventBaseSchema) {}
 
-export class UpdateRunEventDto extends createZodDto(
-  RunEventBaseSchema.partial(),
-) {}
+const UpdateRunEventSchema = RunEventBaseSchema.partial().extend({
+  archive: z.boolean().optional(),
+});
+
+export class UpdateRunEventDto extends createZodDto(UpdateRunEventSchema) {}
 
 const GeoQuerySchema = z
   .object({
@@ -97,6 +99,8 @@ const ListRunEventsSchema = GeoQuerySchema.extend({
       Object.values(RunEventStatus) as [RunEventStatus, ...RunEventStatus[]],
     )
     .optional(),
+  isClosed: z.coerce.boolean().optional(),
+  archive: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
@@ -104,6 +108,7 @@ const ListRunEventsSchema = GeoQuerySchema.extend({
 export class ListRunEventsDto extends createZodDto(ListRunEventsSchema) {}
 
 const ListPublishedRunEventsSchema = GeoQuerySchema.extend({
+  segment: z.enum(['upcoming', 'closed']).default('upcoming'),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });

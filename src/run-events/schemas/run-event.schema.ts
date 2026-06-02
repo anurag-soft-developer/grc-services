@@ -11,7 +11,7 @@ import {
 } from '../interfaces/run-event.interface';
 
 export const runEventSelectFields: string =
-  '_id title slug eventDate reportingTime location price currency maxParticipants status';
+  '_id title slug eventDate reportingTime location price currency maxParticipants registeredCount status isClosed closedAt publishedAt archive registrationsPaused';
 
 export type RunEventDocument = Omit<
   IRunEvent,
@@ -156,6 +156,9 @@ export class RunEvent extends Document {
   @Prop({ type: Number, required: true, min: 1 })
   maxParticipants!: number;
 
+  @Prop({ type: Number, required: true, default: 0, min: 0 })
+  registeredCount!: number;
+
   @Prop({ type: [String], default: [] })
   inclusions!: string[];
 
@@ -172,6 +175,21 @@ export class RunEvent extends Document {
   })
   status!: RunEventStatus;
 
+  @Prop({ type: Boolean, required: true, default: false })
+  isClosed!: boolean;
+
+  @Prop({ type: Date, default: null })
+  closedAt?: Date | null;
+
+  @Prop({ type: Date, default: null })
+  publishedAt?: Date | null;
+
+  @Prop({ type: Boolean, required: true, default: false })
+  archive!: boolean;
+
+  @Prop({ type: Boolean, required: true, default: false })
+  registrationsPaused!: boolean;
+
   @Prop({ type: Types.ObjectId, ref: User.name, required: true })
   createdBy!: Types.ObjectId;
 
@@ -181,5 +199,5 @@ export class RunEvent extends Document {
 
 export const RunEventSchema = SchemaFactory.createForClass(RunEvent);
 
-RunEventSchema.index({ status: 1, eventDate: -1 });
+RunEventSchema.index({ status: 1, isClosed: 1, archive: 1, eventDate: 1 });
 RunEventSchema.index({ 'location.geo': '2dsphere' });

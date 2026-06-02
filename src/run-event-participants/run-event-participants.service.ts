@@ -10,6 +10,7 @@ import { Model, PopulateOptions } from 'mongoose';
 import type { IRajorpayOrder } from '../core/interfaces/rajorpay.interface';
 import { RajorpayService } from '../core/services/rajorpay/rajorpay.service';
 import type { PaginatedResult } from '../core/interfaces/common';
+import { buildPaginatedResult } from '../core/utils/pagination.util';
 import { runEventSelectFields } from '../run-events/schemas/run-event.schema';
 import { RunEventsService } from '../run-events/run-events.service';
 import { userSelectFields } from '../users/schemas/user.schema';
@@ -53,8 +54,8 @@ export class RunEventParticipantsService {
     runEventId: string,
     userId: string,
   ): Promise<RunEventParticipantDocument> {
-    await this.runEventsService.assertPublished(runEventId);
     await this.releaseExpiredPaymentHolds();
+    await this.runEventsService.assertRegistration(runEventId);
 
     const existingSubmitted = await this.participantModel
       .findOne({
@@ -84,13 +85,6 @@ export class RunEventParticipantsService {
     if (existingActive) {
       return existingActive;
     }
-
-    const event = await this.runEventsService.findById(runEventId);
-    await RunEventParticipantsValidationUtility.assertEventHasCapacity(
-      this.participantModel,
-      runEventId,
-      event.maxParticipants,
-    );
 
     const participant = await this.participantModel.create({
       runEventId,
@@ -132,16 +126,10 @@ export class RunEventParticipantsService {
       );
     RunEventParticipantsUtility.applyDraftUpdate(participant, dto);
 
-    const event = await this.runEventsService.assertPublished(runEventId);
+    const event = await this.runEventsService.assertRegistration(runEventId);
     RunEventParticipantsValidationUtility.validateSubmission(
       participant,
       event.customQuestions ?? [],
-    );
-
-    await RunEventParticipantsValidationUtility.assertEventHasCapacity(
-      this.participantModel,
-      runEventId,
-      event.maxParticipants,
     );
 
     if (event.price === 0) {
@@ -152,17 +140,27 @@ export class RunEventParticipantsService {
         participant.contactNumber!,
         participant._id.toString(),
       );
-      RunEventParticipantsUtility.applyFreeSubmissionFields(participant);
-    } else {
-      RunEventParticipantsUtility.applyPendingPaymentFields(
-        participant,
-        event.price,
-      );
     }
 
-    return (await participant.save()).populate(
-      RunEventParticipantsService.populateOptions,
-    );
+    await this.runEventsService.reserveRegistrationSlot(runEventId);
+
+    try {
+      if (event.price === 0) {
+        RunEventParticipantsUtility.applyFreeSubmissionFields(participant);
+      } else {
+        RunEventParticipantsUtility.applyPendingPaymentFields(
+          participant,
+          event.price,
+        );
+      }
+
+      return (await participant.save()).populate(
+        RunEventParticipantsService.populateOptions,
+      );
+    } catch (error) {
+      await this.runEventsService.releaseRegistrationSlot(runEventId);
+      throw error;
+    }
   }
 
   async createOrder(
@@ -265,13 +263,11 @@ export class RunEventParticipantsService {
       throw new BadRequestException('Invalid payment signature');
     }
 
-    const event = await this.runEventsService.findById(runEventId);
     await RunEventParticipantsUtility.confirmPaidParticipant(
       this.participantModel,
       participant,
       dto.razorpay_order_id,
       dto.razorpay_payment_id,
-      event.maxParticipants,
     );
 
     return (await participant.populate(
@@ -303,13 +299,7 @@ export class RunEventParticipantsService {
       this.participantModel.countDocuments(filter).exec(),
     ]);
 
-    return {
-      data: participants,
-      totalDocuments: total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit) || 1,
-    };
+    return buildPaginatedResult(participants, total, page, limit);
   }
 
   async findById(id: string): Promise<RunEventParticipantDocument> {
@@ -336,15 +326,11 @@ export class RunEventParticipantsService {
     if (participant.status !== ParticipantStatus.PENDING_PAYMENT) {
       return;
     }
-    const event = await this.runEventsService.findById(
-      participant.runEventId.toString(),
-    );
     await RunEventParticipantsUtility.confirmPaidParticipant(
       this.participantModel,
       participant,
       orderId,
       paymentId,
-      event.maxParticipants,
     );
   }
 
@@ -361,6 +347,9 @@ export class RunEventParticipantsService {
       'Payment failed via Razorpay webhook',
     );
     await participant.save();
+    await this.runEventsService.releaseRegistrationSlot(
+      participant.runEventId.toString(),
+    );
   }
 
   async applyRefundWebhook(params: {
@@ -382,6 +371,18 @@ export class RunEventParticipantsService {
 
   async releaseExpiredPaymentHolds(): Promise<void> {
     const now = new Date();
+    const expired = await this.participantModel
+      .find({
+        status: ParticipantStatus.PENDING_PAYMENT,
+        paymentExpiresAt: { $lte: now },
+      })
+      .select('runEventId')
+      .exec();
+
+    if (expired.length === 0) {
+      return;
+    }
+
     await this.participantModel.updateMany(
       {
         status: ParticipantStatus.PENDING_PAYMENT,
@@ -397,5 +398,15 @@ export class RunEventParticipantsService {
         $unset: { paymentExpiresAt: '' },
       },
     );
+
+    const releaseCounts = new Map<string, number>();
+    for (const participant of expired) {
+      const eventId = participant.runEventId.toString();
+      releaseCounts.set(eventId, (releaseCounts.get(eventId) ?? 0) + 1);
+    }
+
+    for (const [eventId, count] of releaseCounts) {
+      await this.runEventsService.releaseRegistrationSlots(eventId, count);
+    }
   }
 }

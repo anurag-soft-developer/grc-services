@@ -16,6 +16,7 @@ import type {
 import { UpdateProfileDto } from '../auth/dto/auth.dto';
 import type { Profile } from './interfaces/user.interface';
 import type { PaginatedResult } from '../core/interfaces/common';
+import { buildPaginatedResult } from '../core/utils/pagination.util';
 
 @Injectable()
 export class UsersService {
@@ -309,12 +310,11 @@ export class UsersService {
       this.userModel.countDocuments(filter).exec(),
     ]);
 
-    return {
-      data: users.map((user) => UsersService.sanitizePublicProfile(user)),
-      totalDocuments: total,
+    return buildPaginatedResult(
+      users.map((user) => UsersService.sanitizePublicProfile(user)),
+      total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit) || 1,
-    };
+    );
   }
 }

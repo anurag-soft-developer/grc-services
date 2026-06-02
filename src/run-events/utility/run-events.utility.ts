@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Model, PopulateOptions } from 'mongoose';
 import type { PaginatedResult } from '../../core/interfaces/common';
+import { buildPaginatedResult } from '../../core/utils/pagination.util';
 import { IRunEventLocationInput } from '../interfaces/run-event.interface';
 import {
   RunEvent,
@@ -70,6 +71,7 @@ export class RunEventsUtility {
     page: number,
     limit: number,
     maxDistanceMeters?: number,
+    sort: Record<string, 1 | -1> = { createdAt: -1 },
   ): Promise<PaginatedResult<RunEventDocument>> {
     const skip = (page - 1) * limit;
 
@@ -99,6 +101,7 @@ export class RunEventsUtility {
             'location.long': { $arrayElemAt: ['$location.geo.coordinates', 0] },
           },
         },
+        { $sort: sort },
         {
           $facet: {
             data: [{ $skip: skip }, { $limit: limit }],
@@ -114,12 +117,6 @@ export class RunEventsUtility {
       populateOptions,
     );
 
-    return {
-      data,
-      totalDocuments: total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit) || 1,
-    };
+    return buildPaginatedResult(data, total, page, limit);
   }
 }
