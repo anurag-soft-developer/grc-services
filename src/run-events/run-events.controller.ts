@@ -18,11 +18,15 @@ import {
   ListRunEventsDto,
   UpdateRunEventDto,
 } from './dto/run-events.dto';
+import { RunEventParticipantsService } from '../run-event-participants/run-event-participants.service';
 import { RunEventsService } from './run-events.service';
 
 @Controller('run-events')
 export class RunEventsController {
-  constructor(private readonly runEventsService: RunEventsService) {}
+  constructor(
+    private readonly runEventsService: RunEventsService,
+    private readonly participantsService: RunEventParticipantsService,
+  ) {}
 
   @Roles(UserRole.ADMIN)
   @Post()
@@ -71,6 +75,12 @@ export class RunEventsController {
     return {
       event: event.toJSON(),
     };
+  }
+
+  @Roles(UserRole.ADMIN)
+  @Get(':id/analytics')
+  async getAnalytics(@Param('id') id: string) {
+    return this.participantsService.getEventAnalytics(id);
   }
 
   @Roles(UserRole.ADMIN)

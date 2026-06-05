@@ -6,11 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, PopulateOptions } from 'mongoose';
+import { Model, PopulateOptions, Types } from 'mongoose';
 import type { IRajorpayOrder } from '../core/interfaces/rajorpay.interface';
 import { RajorpayService } from '../core/services/rajorpay/rajorpay.service';
 import type { PaginatedResult } from '../core/interfaces/common';
 import { buildPaginatedResult } from '../core/utils/pagination.util';
+import type { IRunEventAnalytics } from '../run-events/interfaces/run-event-analytics.interface';
 import { runEventRegistrationSelectFields } from '../run-events/schemas/run-event.schema';
 import { RunEventsService } from '../run-events/run-events.service';
 import { userSelectFields } from '../users/schemas/user.schema';
@@ -341,6 +342,90 @@ export class RunEventParticipantsService {
     ]);
 
     return buildPaginatedResult(participants, total, page, limit);
+  }
+
+  async getEventAnalytics(runEventId: string): Promise<IRunEventAnalytics> {
+    const event = await this.runEventsService.findById(runEventId);
+    const objectId = new Types.ObjectId(runEventId);
+
+    const [statusAgg, paymentAgg, revenueAgg] = await Promise.all([
+      this.participantModel.aggregate<{ _id: string; count: number }>([
+        { $match: { runEventId: objectId } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]),
+      this.participantModel.aggregate<{ _id: string; count: number }>([
+        { $match: { runEventId: objectId } },
+        { $group: { _id: '$paymentStatus', count: { $sum: 1 } } },
+      ]),
+      this.participantModel.aggregate<{
+        totalCollected: number;
+        paidRegistrations: number;
+      }>([
+        {
+          $match: {
+            runEventId: objectId,
+            paymentStatus: PaymentStatus.PAID,
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalCollected: { $sum: { $ifNull: ['$totalAmount', 0] } },
+            paidRegistrations: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    const byStatus = {
+      submitted: 0,
+      pending_payment: 0,
+      draft: 0,
+      cancelled: 0,
+    };
+    for (const row of statusAgg) {
+      const key = row._id as keyof typeof byStatus;
+      if (key in byStatus) {
+        byStatus[key] = row.count;
+      }
+    }
+
+    const byPaymentStatus = {
+      paid: 0,
+      pending: 0,
+      failed: 0,
+      refunded: 0,
+    };
+    for (const row of paymentAgg) {
+      const key = row._id as keyof typeof byPaymentStatus;
+      if (key in byPaymentStatus) {
+        byPaymentStatus[key] = row.count;
+      }
+    }
+
+    const revenueRow = revenueAgg[0];
+    const registeredCount = event.registeredCount ?? 0;
+    const maxParticipants = event.maxParticipants ?? null;
+    const capacityPercent =
+      maxParticipants != null && maxParticipants > 0
+        ? Math.round((registeredCount / maxParticipants) * 100)
+        : null;
+
+    return {
+      eventId: runEventId,
+      title: event.title,
+      currency: event.currency ?? 'INR',
+      price: event.price ?? null,
+      maxParticipants,
+      registeredCount,
+      byStatus,
+      byPaymentStatus,
+      revenue: {
+        totalCollected: revenueRow?.totalCollected ?? 0,
+        paidRegistrations: revenueRow?.paidRegistrations ?? 0,
+      },
+      capacityPercent,
+    };
   }
 
   async findById(id: string): Promise<RunEventParticipantDocument> {

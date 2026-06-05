@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { RunEventParticipantsModule } from '../run-event-participants/run-event-participants.module';
 import { RunEvent, RunEventSchema } from './schemas/run-event.schema';
 import { RunEventsController } from './run-events.controller';
 import { RunEventsService } from './run-events.service';
@@ -9,6 +10,7 @@ import { RunEventsService } from './run-events.service';
     MongooseModule.forFeature([
       { name: RunEvent.name, schema: RunEventSchema },
     ]),
+    forwardRef(() => RunEventParticipantsModule),
   ],
   controllers: [RunEventsController],
   providers: [RunEventsService],

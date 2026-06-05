@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { RajorpayService } from '../core/services/rajorpay/rajorpay.service';
 import { RunEventsModule } from '../run-events/run-events.module';
@@ -14,7 +14,7 @@ import { RunEventParticipantsService } from './run-event-participants.service';
     MongooseModule.forFeature([
       { name: RunEventParticipant.name, schema: RunEventParticipantSchema },
     ]),
-    RunEventsModule,
+    forwardRef(() => RunEventsModule),
   ],
   controllers: [RunEventParticipantsController],
   providers: [RunEventParticipantsService, RajorpayService],
