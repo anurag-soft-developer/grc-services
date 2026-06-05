@@ -17,6 +17,7 @@ import {
 import {
   RunEvent,
   RunEventDocument,
+  runEventRegistrationSelectFields,
 } from './schemas/run-event.schema';
 import { RunEventsRegistrationUtility } from './utility/run-events-registration.utility';
 import { RunEventsUtility } from './utility/run-events.utility';
@@ -352,6 +353,26 @@ export class RunEventsService {
       );
     }
     await this.runEventModel.findByIdAndDelete(id).exec();
+  }
+
+  async getRegistrationContext(id: string): Promise<RunEventDocument> {
+    const event = await this.runEventModel
+      .findById(id)
+      .select(runEventRegistrationSelectFields)
+      .exec();
+    if (!event) {
+      throw new NotFoundException('Run event not found');
+    }
+    if (event.status !== RunEventStatus.PUBLISHED || event.isClosed) {
+      throw new BadRequestException('Run event is not open for registration');
+    }
+    if (event.registrationsPaused) {
+      throw new BadRequestException('Registrations are paused for this event');
+    }
+    if (event.archive) {
+      throw new BadRequestException('Run event is not open for registration');
+    }
+    return event;
   }
 
   async assertRegistration(id: string): Promise<RunEventDocument> {

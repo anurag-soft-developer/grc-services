@@ -20,6 +20,20 @@ export enum Gender {
 
 export type CustomQuestionResponseValue = string | string[] | boolean;
 
+export type MyEventRegistrationStatusType =
+  | 'none'
+  | 'draft'
+  | 'pending_payment'
+  | 'submitted'
+  | 'cancelled';
+
+export interface IMyEventRegistrationStatus {
+  status: MyEventRegistrationStatusType;
+  participantId?: string;
+  paymentExpiresAt?: string;
+  paymentHoldExpired?: boolean;
+}
+
 export interface IRunEventParticipant {
   _id: string;
   runEventId: string;

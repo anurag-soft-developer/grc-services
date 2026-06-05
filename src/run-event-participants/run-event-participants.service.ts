@@ -11,7 +11,7 @@ import type { IRajorpayOrder } from '../core/interfaces/rajorpay.interface';
 import { RajorpayService } from '../core/services/rajorpay/rajorpay.service';
 import type { PaginatedResult } from '../core/interfaces/common';
 import { buildPaginatedResult } from '../core/utils/pagination.util';
-import { runEventSelectFields } from '../run-events/schemas/run-event.schema';
+import { runEventRegistrationSelectFields } from '../run-events/schemas/run-event.schema';
 import { RunEventsService } from '../run-events/run-events.service';
 import { userSelectFields } from '../users/schemas/user.schema';
 import {
@@ -20,6 +20,7 @@ import {
   VerifyRazorpayPaymentDto,
 } from './dto/run-event-participants.dto';
 import {
+  IMyEventRegistrationStatus,
   ParticipantStatus,
   PaymentStatus,
 } from './interfaces/run-event-participant.interface';
@@ -39,7 +40,7 @@ export class RunEventParticipantsService {
     },
     {
       path: 'runEventId',
-      select: runEventSelectFields,
+      select: runEventRegistrationSelectFields,
     },
   ];
 
@@ -49,6 +50,47 @@ export class RunEventParticipantsService {
     private readonly runEventsService: RunEventsService,
     private readonly rajorpayService: RajorpayService,
   ) {}
+
+  async getMyRegistrationForEvent(
+    runEventId: string,
+    userId: string,
+  ): Promise<IMyEventRegistrationStatus> {
+    await this.releaseExpiredPaymentHolds();
+
+    const priorityStatuses = [
+      ParticipantStatus.SUBMITTED,
+      ParticipantStatus.PENDING_PAYMENT,
+      ParticipantStatus.DRAFT,
+    ] as const;
+
+    for (const status of priorityStatuses) {
+      const participant = await this.participantModel
+        .findOne({ runEventId, userId, status })
+        .select('_id status paymentExpiresAt paymentStatus')
+        .lean()
+        .exec();
+
+      if (!participant) {
+        continue;
+      }
+
+      const paymentHoldExpired =
+        status === ParticipantStatus.PENDING_PAYMENT &&
+        !!participant.paymentExpiresAt &&
+        new Date(participant.paymentExpiresAt) <= new Date();
+
+      return {
+        status: participant.status,
+        participantId: participant._id.toString(),
+        paymentExpiresAt: participant.paymentExpiresAt?.toISOString(),
+        ...(status === ParticipantStatus.PENDING_PAYMENT
+          ? { paymentHoldExpired }
+          : {}),
+      };
+    }
+
+    return { status: 'none' };
+  }
 
   async getOrCreateDraft(
     runEventId: string,
@@ -137,7 +179,6 @@ export class RunEventParticipantsService {
         this.participantModel,
         runEventId,
         userId,
-        participant.contactNumber!,
         participant._id.toString(),
       );
     }
@@ -311,6 +352,53 @@ export class RunEventParticipantsService {
       throw new NotFoundException('Participant not found');
     }
     return participant;
+  }
+
+  async findByIdForUser(
+    id: string,
+    userId: string,
+    isAdmin: boolean,
+  ): Promise<RunEventParticipantDocument> {
+    const participant = await this.findById(id);
+    if (
+      !isAdmin &&
+      participant.userId.toString() !== userId
+    ) {
+      throw new ForbiddenException(
+        'You can only view your own registrations',
+      );
+    }
+    return participant;
+  }
+
+  async listMine(
+    userId: string,
+    page = 1,
+    limit = 10,
+  ): Promise<PaginatedResult<RunEventParticipantDocument>> {
+    const filter = {
+      userId,
+      status: {
+        $in: [
+          ParticipantStatus.SUBMITTED,
+          ParticipantStatus.PENDING_PAYMENT,
+        ],
+      },
+    };
+
+    const skip = (page - 1) * limit;
+    const [participants, total] = await Promise.all([
+      this.participantModel
+        .find(filter)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate(RunEventParticipantsService.populateOptions)
+        .exec(),
+      this.participantModel.countDocuments(filter).exec(),
+    ]);
+
+    return buildPaginatedResult(participants, total, page, limit);
   }
 
   async confirmPaidParticipantByOrderId(

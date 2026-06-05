@@ -13,6 +13,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles, UserRole } from '../auth/decorators/roles.decorator';
 import type { IUser } from '../users/interfaces/user.interface';
 import {
+  ListMyParticipantsDto,
   ListParticipantsDto,
   SaveParticipantDraftDto,
   SubmitParticipantDto,
@@ -25,6 +26,17 @@ export class RunEventParticipantsController {
   constructor(
     private readonly participantsService: RunEventParticipantsService,
   ) {}
+
+  @Get('run-events/:eventId/participants/my-registration')
+  async getMyRegistration(
+    @Param('eventId') eventId: string,
+    @CurrentUser() user: IUser,
+  ) {
+    return this.participantsService.getMyRegistrationForEvent(
+      eventId,
+      user._id.toString(),
+    );
+  }
 
   @Get('run-events/:eventId/participants/draft')
   async getOrCreateDraft(
@@ -82,6 +94,18 @@ export class RunEventParticipantsController {
     );
   }
 
+  @Get('run-event-participants/me')
+  async listMine(
+    @CurrentUser() user: IUser,
+    @Query() query: ListMyParticipantsDto,
+  ) {
+    return this.participantsService.listMine(
+      user._id.toString(),
+      query.page,
+      query.limit,
+    );
+  }
+
   @Roles(UserRole.ADMIN)
   @Get('run-events/:eventId/participants')
   async listByEvent(
@@ -95,9 +119,15 @@ export class RunEventParticipantsController {
     );
   }
 
-  @Roles(UserRole.ADMIN)
   @Get('run-event-participants/:id')
-  async findById(@Param('id') id: string) {
-    return this.participantsService.findById(id);
+  async findById(
+    @Param('id') id: string,
+    @CurrentUser() user: IUser,
+  ) {
+    return this.participantsService.findByIdForUser(
+      id,
+      user._id.toString(),
+      user.role === UserRole.ADMIN,
+    );
   }
 }

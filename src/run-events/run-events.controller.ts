@@ -12,7 +12,6 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles, UserRole } from '../auth/decorators/roles.decorator';
 import type { IUser } from '../users/interfaces/user.interface';
-import { COMMON_FIELDS } from '../run-event-participants/constants/common-fields';
 import {
   CreateRunEventDto,
   ListPublishedRunEventsDto,
@@ -63,9 +62,14 @@ export class RunEventsController {
   @Get('public/:slug')
   async findPublishedBySlug(@Param('slug') slug: string) {
     const event = await this.runEventsService.findPublishedBySlug(slug);
+    return event.toJSON();
+  }
+
+  @Get(':eventId/registration-context')
+  async getRegistrationContext(@Param('eventId') eventId: string) {
+    const event = await this.runEventsService.getRegistrationContext(eventId);
     return {
-      ...event.toJSON(),
-      commonFields: COMMON_FIELDS,
+      event: event.toJSON(),
     };
   }
 

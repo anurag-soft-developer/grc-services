@@ -4,7 +4,6 @@ import {
   CustomQuestionType,
   ICustomQuestion,
 } from '../../run-events/interfaces/run-event.interface';
-import { HEAR_ABOUT_US_OPTIONS, GENDERS } from '../constants/common-fields';
 import {
   CustomQuestionResponseValue,
   ParticipantStatus,
@@ -28,35 +27,6 @@ export class RunEventParticipantsValidationUtility {
     participant: RunEventParticipantDocument,
     customQuestions: ICustomQuestion[],
   ): void {
-    if (!participant.fullName?.trim()) {
-      throw new BadRequestException('Full name is required');
-    }
-    if (!participant.contactNumber?.trim()) {
-      throw new BadRequestException('Contact number is required');
-    }
-    if (!participant.gender || !GENDERS.includes(participant.gender)) {
-      throw new BadRequestException('Valid gender is required');
-    }
-    if (!participant.instagramHandle?.trim()) {
-      throw new BadRequestException('Instagram handle is required');
-    }
-    if (!participant.city?.trim()) {
-      throw new BadRequestException('City is required');
-    }
-    if (
-      !participant.howDidYouHearAboutUs?.length ||
-      !participant.howDidYouHearAboutUs.every((v) =>
-        (HEAR_ABOUT_US_OPTIONS as readonly string[]).includes(v),
-      )
-    ) {
-      throw new BadRequestException(
-        'At least one valid "how did you hear about us" option is required',
-      );
-    }
-    if (participant.guidelinesAgreed !== true) {
-      throw new BadRequestException('You must agree to the guidelines');
-    }
-
     RunEventParticipantsValidationUtility.validateCustomQuestionResponses(
       customQuestions,
       RunEventParticipantsValidationUtility.getResponsesRecord(participant),
@@ -121,23 +91,20 @@ export class RunEventParticipantsValidationUtility {
     participantModel: Model<RunEventParticipant>,
     runEventId: string,
     userId: string,
-    contactNumber: string,
     excludeParticipantId: string,
   ): Promise<void> {
     const duplicate = await participantModel
       .findOne({
         runEventId,
+        userId,
         status: ParticipantStatus.SUBMITTED,
         _id: { $ne: excludeParticipantId },
-        $or: [{ userId }, { contactNumber }],
       })
       .exec();
 
     if (duplicate) {
       throw new ConflictException(
-        duplicate.userId?.toString() === userId
-          ? 'You have already registered for this event'
-          : 'A submission with this contact number already exists for this event',
+        'You have already registered for this event',
       );
     }
   }

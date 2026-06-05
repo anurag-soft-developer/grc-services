@@ -2,7 +2,6 @@ import { NotFoundException } from '@nestjs/common';
 import { Model } from 'mongoose';
 import { SaveParticipantDraftDto } from '../dto/run-event-participants.dto';
 import {
-  Gender,
   ParticipantStatus,
   PaymentStatus,
 } from '../interfaces/run-event-participant.interface';
@@ -36,24 +35,6 @@ export class RunEventParticipantsUtility {
     participant: RunEventParticipantDocument,
     dto: SaveParticipantDraftDto,
   ): void {
-    if (dto.fullName !== undefined) participant.fullName = dto.fullName;
-    if (dto.contactNumber !== undefined) {
-      participant.contactNumber = dto.contactNumber;
-    }
-    if (dto.gender !== undefined) {
-      participant.gender = dto.gender as Gender;
-    }
-    if (dto.instagramHandle !== undefined) {
-      participant.instagramHandle = dto.instagramHandle;
-    }
-    if (dto.city !== undefined) participant.city = dto.city;
-    if (dto.howDidYouHearAboutUs !== undefined) {
-      participant.howDidYouHearAboutUs = dto.howDidYouHearAboutUs;
-    }
-    if (dto.guidelinesAgreed !== undefined) {
-      participant.guidelinesAgreed = dto.guidelinesAgreed;
-    }
-
     if (dto.customQuestionResponses) {
       participant.customQuestionResponses = {
         ...participant.customQuestionResponses,
@@ -171,7 +152,6 @@ export class RunEventParticipantsUtility {
       participantModel,
       participant.runEventId.toString(),
       participant.userId.toString(),
-      participant.contactNumber!,
       participant._id.toString(),
     );
 

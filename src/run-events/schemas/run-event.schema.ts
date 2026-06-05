@@ -13,6 +13,9 @@ import {
 export const runEventSelectFields: string =
   '_id title slug eventDate reportingTime location price currency maxParticipants registeredCount status isClosed closedAt publishedAt archive registrationsPaused';
 
+export const runEventRegistrationSelectFields: string =
+  `${runEventSelectFields} customQuestions guidelines description`;
+
 export type RunEventDocument = Omit<
   IRunEvent,
   '_id' | 'createdBy' | 'createdAt' | 'updatedAt' | 'eventDate' | 'location'
