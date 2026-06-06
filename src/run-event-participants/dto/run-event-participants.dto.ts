@@ -1,6 +1,5 @@
 import { createZodDto , type ZodDto} from 'nestjs-zod';
 import { z } from 'zod';
-import { Gender } from '../interfaces/run-event-participant.interface';
 
 const CustomQuestionResponsesSchema = z.record(
   z.string(),
@@ -26,7 +25,13 @@ const ListParticipantsSchema = z.object({
 
 export class ListParticipantsDto extends createZodDto(ListParticipantsSchema) {}
 
-export class ListMyParticipantsDto extends createZodDto(ListParticipantsSchema) {}
+const ListMyParticipantsSchema = ListParticipantsSchema.extend({
+  segment: z.enum(['all', 'upcoming']).default('all'),
+});
+
+export class ListMyParticipantsDto extends createZodDto(
+  ListMyParticipantsSchema,
+) {}
 
 const VerifyRazorpayPaymentSchema = z.object({
   participantId: z.string().min(1, 'Participant ID is required'),
@@ -39,4 +44,4 @@ export class VerifyRazorpayPaymentDto extends createZodDto(
   VerifyRazorpayPaymentSchema,
 ) {}
 
-export { Gender, ParticipantFieldsSchema, CustomQuestionResponsesSchema };
+export { ParticipantFieldsSchema, CustomQuestionResponsesSchema };

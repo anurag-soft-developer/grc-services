@@ -32,6 +32,12 @@ import {
 import { RunEventParticipantsUtility } from './utility/run-event-participants.utility';
 import { RunEventParticipantsValidationUtility } from './utility/run-event-participants.validation.utility';
 
+function startOfTodayUtc(): Date {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
 @Injectable()
 export class RunEventParticipantsService {
   static populateOptions: PopulateOptions[] = [
@@ -460,7 +466,12 @@ export class RunEventParticipantsService {
     userId: string,
     page = 1,
     limit = 10,
+    segment: 'all' | 'upcoming' = 'all',
   ): Promise<PaginatedResult<RunEventParticipantDocument>> {
+    if (segment === 'upcoming') {
+      return this.listMineUpcoming(userId, page, limit);
+    }
+
     const filter = {
       userId,
       status: {
@@ -482,6 +493,91 @@ export class RunEventParticipantsService {
         .exec(),
       this.participantModel.countDocuments(filter).exec(),
     ]);
+
+    return buildPaginatedResult(participants, total, page, limit);
+  }
+
+  private async listMineUpcoming(
+    userId: string,
+    page: number,
+    limit: number,
+  ): Promise<PaginatedResult<RunEventParticipantDocument>> {
+    const skip = (page - 1) * limit;
+    const startOfToday = startOfTodayUtc();
+    const eventsCollection =
+      this.runEventsService.getEventsCollectionName();
+
+    const [aggregateResult] = await this.participantModel.aggregate<{
+      data: Array<{ _id: Types.ObjectId }>;
+      total: Array<{ count: number }>;
+    }>([
+      {
+        $match: {
+          $expr: {
+            $eq: [{ $toString: '$userId' }, userId],
+          },
+          status: {
+            $in: [
+              ParticipantStatus.SUBMITTED,
+              ParticipantStatus.PENDING_PAYMENT,
+            ],
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: eventsCollection,
+          let: { runEventId: '$runEventId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: [
+                    { $toString: '$_id' },
+                    { $toString: '$$runEventId' },
+                  ],
+                },
+                eventDate: { $gte: startOfToday },
+                isClosed: { $ne: true },
+                archive: { $ne: true },
+              },
+            },
+          ],
+          as: 'event',
+        },
+      },
+      { $match: { 'event.0': { $exists: true } } },
+      { $set: { event: { $first: '$event' } } },
+      { $sort: { 'event.eventDate': 1 } },
+      {
+        $facet: {
+          data: [{ $skip: skip }, { $limit: limit }],
+          total: [{ $count: 'count' }],
+        },
+      },
+    ]);
+
+    const rows = aggregateResult?.data ?? [];
+    const total = aggregateResult?.total?.[0]?.count ?? 0;
+    const ids = rows.map((row) => row._id);
+
+    if (ids.length === 0) {
+      return buildPaginatedResult([], total, page, limit);
+    }
+
+    const participants = await this.participantModel
+      .find({ _id: { $in: ids } })
+      .populate(RunEventParticipantsService.populateOptions)
+      .exec();
+
+    const order = new Map(
+      ids.map((id, index) => [id.toString(), index]),
+    );
+    participants.sort(
+      (a, b) =>
+        (order.get(a._id.toString()) ?? 0) -
+        (order.get(b._id.toString()) ?? 0),
+    );
 
     return buildPaginatedResult(participants, total, page, limit);
   }

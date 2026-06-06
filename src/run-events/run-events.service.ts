@@ -41,6 +41,10 @@ export class RunEventsService {
     @InjectModel(RunEvent.name) private runEventModel: Model<RunEvent>,
   ) {}
 
+  getEventsCollectionName(): string {
+    return this.runEventModel.collection.name;
+  }
+
   async create(
     dto: CreateRunEventDto,
     createdBy: string,

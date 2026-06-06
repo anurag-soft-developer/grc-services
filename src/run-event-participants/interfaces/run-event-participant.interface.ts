@@ -12,12 +12,6 @@ export enum PaymentStatus {
   REFUNDED = 'refunded',
 }
 
-export enum Gender {
-  FEMALE = 'female',
-  MALE = 'male',
-  OTHER = 'other',
-}
-
 export type CustomQuestionResponseValue = string | string[] | boolean;
 
 export type MyEventRegistrationStatusType =
@@ -38,13 +32,6 @@ export interface IRunEventParticipant {
   _id: string;
   runEventId: string;
   userId: string;
-  fullName?: string;
-  contactNumber?: string;
-  gender?: Gender;
-  instagramHandle?: string;
-  city?: string;
-  howDidYouHearAboutUs?: string[];
-  guidelinesAgreed?: boolean;
   customQuestionResponses: Record<string, CustomQuestionResponseValue>;
   status: ParticipantStatus;
   totalAmount?: number;

@@ -103,6 +103,7 @@ export class RunEventParticipantsController {
       user._id.toString(),
       query.page,
       query.limit,
+      query.segment,
     );
   }
 

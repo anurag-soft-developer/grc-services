@@ -4,7 +4,6 @@ import { RunEvent } from '../../run-events/schemas/run-event.schema';
 import { User } from '../../users/schemas/user.schema';
 import {
   CustomQuestionResponseValue,
-  Gender,
   IRunEventParticipant,
   ParticipantStatus,
   PaymentStatus,
@@ -49,27 +48,6 @@ export class RunEventParticipant extends Document {
 
   @Prop({ type: Types.ObjectId, ref: User.name, required: true })
   userId!: Types.ObjectId;
-
-  @Prop({ type: String, trim: true })
-  fullName?: string;
-
-  @Prop({ type: String, trim: true })
-  contactNumber?: string;
-
-  @Prop({ type: String, enum: Object.values(Gender) })
-  gender?: Gender;
-
-  @Prop({ type: String, trim: true })
-  instagramHandle?: string;
-
-  @Prop({ type: String, trim: true })
-  city?: string;
-
-  @Prop({ type: [String], default: [] })
-  howDidYouHearAboutUs?: string[];
-
-  @Prop({ type: Boolean, default: false })
-  guidelinesAgreed?: boolean;
 
   @Prop({
     type: Object,
@@ -133,17 +111,6 @@ export class RunEventParticipant extends Document {
 
 export const RunEventParticipantSchema =
   SchemaFactory.createForClass(RunEventParticipant);
-
-RunEventParticipantSchema.index(
-  { runEventId: 1, contactNumber: 1, status: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      status: ParticipantStatus.SUBMITTED,
-      contactNumber: { $type: 'string', $ne: '' },
-    },
-  },
-);
 
 RunEventParticipantSchema.index(
   { runEventId: 1, userId: 1 },
