@@ -44,4 +44,32 @@ export class VerifyRazorpayPaymentDto extends createZodDto(
   VerifyRazorpayPaymentSchema,
 ) {}
 
+const CreateOrderQuerySchema = z.object({
+  paymentLink: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+});
+
+export class CreateOrderQueryDto extends createZodDto(CreateOrderQuerySchema) {}
+
+const VerifyRazorpayHostedPaymentSchema = z.object({
+  participantId: z.string().min(1, 'Participant ID is required'),
+  razorpay_payment_link_id: z
+    .string()
+    .min(1, 'Razorpay payment link id is required'),
+  razorpay_payment_link_reference_id: z
+    .string()
+    .min(1, 'Razorpay payment link reference id is required'),
+  razorpay_payment_link_status: z
+    .string()
+    .min(1, 'Razorpay payment link status is required'),
+  razorpay_payment_id: z.string().min(1, 'Razorpay payment id is required'),
+  razorpay_signature: z.string().min(1, 'Razorpay signature is required'),
+});
+
+export class VerifyRazorpayHostedPaymentDto extends createZodDto(
+  VerifyRazorpayHostedPaymentSchema,
+) {}
+
 export { ParticipantFieldsSchema, CustomQuestionResponsesSchema };

@@ -38,6 +38,9 @@ export interface IRunEventParticipant {
   paymentStatus: PaymentStatus;
   paymentId?: string;
   razorpayOrderId?: string;
+  razorpayPaymentLinkId?: string;
+  razorpayPaymentLinkShortUrl?: string;
+  razorpayPaymentLinkCallbackUrl?: string;
   invoiceId?: string;
   paidAt?: Date;
   paymentExpiresAt?: Date;

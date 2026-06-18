@@ -1,5 +1,8 @@
 import { NotFoundException } from '@nestjs/common';
 import { Model } from 'mongoose';
+import type { IRajorpayOrder } from '../../core/interfaces/rajorpay.interface';
+import { RajorpayService } from '../../core/services/rajorpay/rajorpay.service';
+import type { IUser } from '../../users/interfaces/user.interface';
 import { SaveParticipantDraftDto } from '../dto/run-event-participants.dto';
 import {
   ParticipantStatus,
@@ -12,7 +15,7 @@ import {
 import { RunEventParticipantsValidationUtility } from './run-event-participants.validation.utility';
 
 export class RunEventParticipantsUtility {
-  private static readonly PAYMENT_HOLD_MINUTES = 10;
+  private static readonly PAYMENT_HOLD_MINUTES = 20;
 
   static getPaymentExpiryDate(): Date {
     const now = new Date();
@@ -78,6 +81,16 @@ export class RunEventParticipantsUtility {
     participant.cancelledAt = new Date();
     participant.cancelReason = cancelReason;
     participant.paymentExpiresAt = undefined;
+    RunEventParticipantsUtility.clearRazorpayPaymentFields(participant);
+  }
+
+  static clearRazorpayPaymentFields(
+    participant: RunEventParticipantDocument,
+  ): void {
+    participant.razorpayOrderId = undefined;
+    participant.razorpayPaymentLinkId = undefined;
+    participant.razorpayPaymentLinkShortUrl = undefined;
+    participant.razorpayPaymentLinkCallbackUrl = undefined;
   }
 
   static applyRefundFields(
@@ -167,5 +180,101 @@ export class RunEventParticipantsUtility {
       RunEventParticipantsUtility.generateInvoiceId(participant._id.toString());
 
     await participant.save();
+  }
+
+  static async resolveOrCreateRazorpayOrder(
+    rajorpayService: RajorpayService,
+    participant: RunEventParticipantDocument,
+    participantId: string,
+  ): Promise<IRajorpayOrder> {
+    const totalAmount = participant.totalAmount!;
+
+    if (participant.razorpayOrderId) {
+      const existingOrder = await rajorpayService.getOrder(
+        participant.razorpayOrderId,
+      );
+      if (
+        existingOrder &&
+        rajorpayService.isOrderReusable(existingOrder, totalAmount)
+      ) {
+        return existingOrder;
+      }
+
+      RunEventParticipantsUtility.clearRazorpayPaymentFields(participant);
+    }
+
+    const order = await rajorpayService.createOrder(
+      totalAmount,
+      `participant_${participantId}`,
+    );
+
+    participant.razorpayOrderId = order.id;
+    await participant.save();
+
+    return order;
+  }
+
+  static async resolveOrCreateRazorpayPaymentLink(
+    rajorpayService: RajorpayService,
+    participant: RunEventParticipantDocument,
+    user: IUser,
+    runEventId: string,
+    participantId: string,
+    order: IRajorpayOrder,
+    callbackUrl: string,
+    expireBy: number,
+  ): Promise<{ id: string; shortUrl: string; callbackUrl: string }> {
+    if (
+      participant.razorpayPaymentLinkId &&
+      participant.razorpayPaymentLinkShortUrl &&
+      participant.razorpayPaymentLinkCallbackUrl
+    ) {
+      const existingLink = await rajorpayService.getPaymentLink(
+        participant.razorpayPaymentLinkId,
+      );
+      if (
+        existingLink &&
+        rajorpayService.isPaymentLinkReusable(existingLink, order.amount)
+      ) {
+        return {
+          id: participant.razorpayPaymentLinkId,
+          shortUrl: participant.razorpayPaymentLinkShortUrl,
+          callbackUrl: participant.razorpayPaymentLinkCallbackUrl,
+        };
+      }
+
+      participant.razorpayPaymentLinkId = undefined;
+      participant.razorpayPaymentLinkShortUrl = undefined;
+      participant.razorpayPaymentLinkCallbackUrl = undefined;
+    }
+
+    const link = await rajorpayService.createPaymentLink({
+      amountInPaise: order.amount,
+      referenceId: `participant_${participantId}`,
+      description: 'Event registration payment',
+      callbackUrl,
+      expireBy,
+      customer: {
+        name: user.fullName,
+        email: user.email,
+        contact: user.phone,
+      },
+      notes: {
+        participantId,
+        eventId: runEventId,
+        razorpayOrderId: order.id,
+      },
+    });
+
+    participant.razorpayPaymentLinkId = link.id;
+    participant.razorpayPaymentLinkShortUrl = link.short_url;
+    participant.razorpayPaymentLinkCallbackUrl = callbackUrl;
+    await participant.save();
+
+    return {
+      id: link.id,
+      shortUrl: link.short_url,
+      callbackUrl,
+    };
   }
 }

@@ -8,6 +8,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PopulateOptions, Types } from 'mongoose';
 import type { IRajorpayOrder } from '../core/interfaces/rajorpay.interface';
+import { config } from '../core/config/env.config';
 import { RajorpayService } from '../core/services/rajorpay/rajorpay.service';
 import type { PaginatedResult } from '../core/interfaces/common';
 import { buildPaginatedResult } from '../core/utils/pagination.util';
@@ -15,9 +16,11 @@ import type { IRunEventAnalytics } from '../run-events/interfaces/run-event-anal
 import { runEventRegistrationSelectFields } from '../run-events/schemas/run-event.schema';
 import { RunEventsService } from '../run-events/run-events.service';
 import { userSelectFields } from '../users/schemas/user.schema';
+import type { IUser } from '../users/interfaces/user.interface';
 import {
   SaveParticipantDraftDto,
   SubmitParticipantDto,
+  VerifyRazorpayHostedPaymentDto,
   VerifyRazorpayPaymentDto,
 } from './dto/run-event-participants.dto';
 import {
@@ -213,11 +216,18 @@ export class RunEventParticipantsService {
 
   async createOrder(
     runEventId: string,
-    userId: string,
+    user: IUser,
+    paymentLink = false,
   ): Promise<{
     participant: RunEventParticipantDocument;
     order: IRajorpayOrder;
+    paymentLink?: {
+      id: string;
+      shortUrl: string;
+      callbackUrl: string;
+    };
   }> {
+    const userId = user._id.toString();
     await this.releaseExpiredPaymentHolds();
 
     const participant =
@@ -237,20 +247,137 @@ export class RunEventParticipantsService {
       throw new BadRequestException('This registration does not require payment');
     }
 
-    const order = await this.rajorpayService.createOrder(
-      participant.totalAmount,
-      `participant_${participant._id.toString()}`,
+    const participantId = participant._id.toString();
+    const order = await RunEventParticipantsUtility.resolveOrCreateRazorpayOrder(
+      this.rajorpayService,
+      participant,
+      participantId,
     );
 
-    participant.razorpayOrderId = order.id;
-    await participant.save();
+    const populatedParticipant = (await participant.populate(
+      RunEventParticipantsService.populateOptions,
+    )) as RunEventParticipantDocument;
+
+    if (!paymentLink) {
+      return {
+        participant: populatedParticipant,
+        order,
+      };
+    }
+
+    const callbackUrl = `${config.FRONTEND_URL}/payments/razorpay/callback?eventId=${encodeURIComponent(runEventId)}&participantId=${encodeURIComponent(participantId)}`;
+    const minExpireBy =
+      Math.floor(Date.now() / 1000) +
+      RajorpayService.PAYMENT_LINK_MIN_EXPIRY_SECONDS;
+    const expireBy = Math.max(
+      participant.paymentExpiresAt
+        ? Math.floor(participant.paymentExpiresAt.getTime() / 1000)
+        : minExpireBy,
+      minExpireBy,
+    );
+
+    const resolvedPaymentLink =
+      await RunEventParticipantsUtility.resolveOrCreateRazorpayPaymentLink(
+        this.rajorpayService,
+        participant,
+        user,
+        runEventId,
+        participantId,
+        order,
+        callbackUrl,
+        expireBy,
+      );
+
+    const participantWithLink = (await participant.populate(
+      RunEventParticipantsService.populateOptions,
+    )) as RunEventParticipantDocument;
 
     return {
-      participant: (await participant.populate(
-        RunEventParticipantsService.populateOptions,
-      )) as RunEventParticipantDocument,
+      participant: participantWithLink,
       order,
+      paymentLink: resolvedPaymentLink,
     };
+  }
+
+  async verifyHostedPayment(
+    runEventId: string,
+    userId: string,
+    dto: VerifyRazorpayHostedPaymentDto,
+  ): Promise<RunEventParticipantDocument> {
+    await this.releaseExpiredPaymentHolds();
+
+    const participant = await this.participantModel.findById(dto.participantId);
+    if (!participant) {
+      throw new NotFoundException('Participant not found');
+    }
+
+    if (participant.runEventId.toString() !== runEventId) {
+      throw new BadRequestException('Participant does not belong to this event');
+    }
+
+    if (participant.userId.toString() !== userId) {
+      throw new ForbiddenException(
+        'You can only verify your own registration payment',
+      );
+    }
+
+    if (participant.paymentStatus === PaymentStatus.PAID) {
+      return (await participant.populate(
+        RunEventParticipantsService.populateOptions,
+      )) as RunEventParticipantDocument;
+    }
+
+    if (participant.status !== ParticipantStatus.PENDING_PAYMENT) {
+      throw new BadRequestException(
+        'Only pending payment registrations can be paid',
+      );
+    }
+
+    if (RunEventParticipantsValidationUtility.isPaymentHoldExpired(participant)) {
+      throw new BadRequestException(
+        'Payment hold expired. Please submit your registration again.',
+      );
+    }
+
+    if (dto.razorpay_payment_link_status !== 'paid') {
+      throw new BadRequestException('Payment was not completed');
+    }
+
+    if (
+      participant.razorpayPaymentLinkId &&
+      participant.razorpayPaymentLinkId !== dto.razorpay_payment_link_id
+    ) {
+      throw new BadRequestException(
+        'Payment link does not match this registration',
+      );
+    }
+
+    const isValidSignature = this.rajorpayService.verifyPaymentLinkSignature({
+      paymentLinkId: dto.razorpay_payment_link_id,
+      referenceId: dto.razorpay_payment_link_reference_id,
+      status: dto.razorpay_payment_link_status,
+      paymentId: dto.razorpay_payment_id,
+      signature: dto.razorpay_signature,
+    });
+    if (!isValidSignature) {
+      throw new BadRequestException('Invalid payment signature');
+    }
+
+    const orderId = participant.razorpayOrderId;
+    if (!orderId) {
+      throw new BadRequestException('Payment order not found for this registration');
+    }
+
+    await RunEventParticipantsUtility.confirmPaidParticipant(
+      this.participantModel,
+      participant,
+      orderId,
+      dto.razorpay_payment_id,
+    );
+
+    return (await participant.populate(
+      RunEventParticipantsService.populateOptions,
+    )) as RunEventParticipantDocument;
   }
 
   async verifyPayment(
@@ -664,7 +791,13 @@ export class RunEventParticipantsService {
           cancelledAt: now,
           cancelReason: 'Payment was not confirmed in time',
         },
-        $unset: { paymentExpiresAt: '' },
+        $unset: {
+          paymentExpiresAt: '',
+          razorpayOrderId: '',
+          razorpayPaymentLinkId: '',
+          razorpayPaymentLinkShortUrl: '',
+          razorpayPaymentLinkCallbackUrl: '',
+        },
       },
     );
 

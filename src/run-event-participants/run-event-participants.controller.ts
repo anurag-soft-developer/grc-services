@@ -13,10 +13,12 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles, UserRole } from '../auth/decorators/roles.decorator';
 import type { IUser } from '../users/interfaces/user.interface';
 import {
+  CreateOrderQueryDto,
   ListMyParticipantsDto,
   ListParticipantsDto,
   SaveParticipantDraftDto,
   SubmitParticipantDto,
+  VerifyRazorpayHostedPaymentDto,
   VerifyRazorpayPaymentDto,
 } from './dto/run-event-participants.dto';
 import { RunEventParticipantsService } from './run-event-participants.service';
@@ -76,8 +78,27 @@ export class RunEventParticipantsController {
   async createOrder(
     @Param('eventId') eventId: string,
     @CurrentUser() user: IUser,
+    @Query() query: CreateOrderQueryDto,
   ) {
-    return this.participantsService.createOrder(eventId, user._id.toString());
+    return this.participantsService.createOrder(
+      eventId,
+      user,
+      query.paymentLink,
+    );
+  }
+
+  @Post('run-events/:eventId/participants/verify-hosted-payment')
+  @HttpCode(HttpStatus.OK)
+  async verifyHostedPayment(
+    @Param('eventId') eventId: string,
+    @CurrentUser() user: IUser,
+    @Body() dto: VerifyRazorpayHostedPaymentDto,
+  ) {
+    return this.participantsService.verifyHostedPayment(
+      eventId,
+      user._id.toString(),
+      dto,
+    );
   }
 
   @Post('run-events/:eventId/participants/verify-payment')

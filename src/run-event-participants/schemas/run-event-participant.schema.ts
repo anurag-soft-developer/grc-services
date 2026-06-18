@@ -79,6 +79,15 @@ export class RunEventParticipant extends Document {
   razorpayOrderId?: string;
 
   @Prop({ type: String })
+  razorpayPaymentLinkId?: string;
+
+  @Prop({ type: String })
+  razorpayPaymentLinkShortUrl?: string;
+
+  @Prop({ type: String })
+  razorpayPaymentLinkCallbackUrl?: string;
+
+  @Prop({ type: String })
   invoiceId?: string;
 
   @Prop({ type: Date })
@@ -129,5 +138,6 @@ RunEventParticipantSchema.index(
 );
 
 RunEventParticipantSchema.index({ razorpayOrderId: 1 });
+RunEventParticipantSchema.index({ razorpayPaymentLinkId: 1 });
 RunEventParticipantSchema.index({ paymentId: 1 });
 RunEventParticipantSchema.index({ status: 1, paymentExpiresAt: 1 });
