@@ -37,29 +37,13 @@ export class RunEventsController {
   @Roles(UserRole.ADMIN)
   @Get()
   async findAll(@Query() query: ListRunEventsDto) {
-    return this.runEventsService.findAll(
-      query.status,
-      query.page,
-      query.limit,
-      query.lat,
-      query.long,
-      query.maxDistanceMeters,
-      query.isClosed,
-      query.archive,
-    );
+    return this.runEventsService.findAll(query);
   }
 
   @Public()
   @Get('public')
   async findPublic(@Query() query: ListPublishedRunEventsDto) {
-    return this.runEventsService.findPublic(
-      query.segment,
-      query.page,
-      query.limit,
-      query.lat,
-      query.long,
-      query.maxDistanceMeters,
-    );
+    return this.runEventsService.findPublic(query);
   }
 
   @Public()

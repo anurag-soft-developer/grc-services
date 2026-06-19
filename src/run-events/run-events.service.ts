@@ -9,7 +9,7 @@ import { Model, PopulateOptions } from 'mongoose';
 import type { PaginatedResult } from '../core/interfaces/common';
 import { buildPaginatedResult } from '../core/utils/pagination.util';
 import { userSelectFields } from '../users/schemas/user.schema';
-import { CreateRunEventDto, UpdateRunEventDto } from './dto/run-events.dto';
+import { CreateRunEventDto, ListPublishedRunEventsDto, ListRunEventsDto, UpdateRunEventDto } from './dto/run-events.dto';
 import {
   PublicRunEventSegment,
   RunEventStatus,
@@ -20,13 +20,12 @@ import {
   runEventRegistrationSelectFields,
 } from './schemas/run-event.schema';
 import { RunEventsRegistrationUtility } from './utility/run-events-registration.utility';
+import {
+  buildCityFilterValue,
+  type EventDateRangeFilter,
+  startOfTodayUtc,
+} from './utility/run-events-list-filter.util';
 import { RunEventsUtility } from './utility/run-events.utility';
-
-function startOfTodayUtc(): Date {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
 
 @Injectable()
 export class RunEventsService {
@@ -69,24 +68,38 @@ export class RunEventsService {
   }
 
   async findAll(
-    status?: RunEventStatus,
-    page = 1,
-    limit = 10,
-    lat?: number,
-    long?: number,
-    maxDistanceMeters?: number,
-    isClosed?: boolean,
-    archive?: boolean,
+    query: ListRunEventsDto,
   ): Promise<PaginatedResult<RunEventDocument>> {
+    const {
+      status,
+      segment,
+      page = 1,
+      limit = 10,
+      lat,
+      long,
+      maxDistanceMeters,
+      isClosed,
+      archive,
+      eventDate,
+      city,
+    } = query;
     const filter: Record<string, unknown> = {};
     if (status) {
       filter.status = status;
     }
-    if (isClosed !== undefined) {
-      filter.isClosed = isClosed;
-    }
     if (archive !== undefined) {
       filter.archive = archive;
+    }
+    if (segment) {
+      this.applySegmentFilter(filter, segment, eventDate);
+    } else if (eventDate) {
+      filter.eventDate = eventDate;
+    }
+    if (isClosed !== undefined && segment === undefined) {
+      filter.isClosed = isClosed;
+    }
+    if (city) {
+      filter['location.city'] = buildCityFilterValue(city);
     }
 
     if (lat !== undefined && long !== undefined) {
@@ -117,23 +130,67 @@ export class RunEventsService {
     return buildPaginatedResult(events, total, page, limit);
   }
 
-  private buildPublicFilter(segment: PublicRunEventSegment): Record<string, unknown> {
+  private applySegmentFilter(
+    filter: Record<string, unknown>,
+    segment: PublicRunEventSegment | undefined,
+    eventDate?: EventDateRangeFilter,
+  ): void {
+    if (!segment) {
+      const upcoming: Record<string, unknown> = { isClosed: false };
+      const closed: Record<string, unknown> = { isClosed: true };
+
+      if (eventDate) {
+        upcoming.eventDate = eventDate;
+        closed.eventDate = eventDate;
+      } else {
+        upcoming.eventDate = { $gte: startOfTodayUtc() };
+      }
+
+      filter.$or = [upcoming, closed];
+      return;
+    }
+
+    if (segment === 'upcoming') {
+      filter.isClosed = false;
+      if (eventDate) {
+        filter.eventDate = eventDate;
+      } else {
+        filter.eventDate = { $gte: startOfTodayUtc() };
+      }
+      return;
+    }
+
+    filter.isClosed = true;
+    if (eventDate) {
+      filter.eventDate = eventDate;
+    }
+  }
+
+  private buildPublicFilter(
+    segment: PublicRunEventSegment | undefined,
+    eventDate?: EventDateRangeFilter,
+    city?: string,
+  ): Record<string, unknown> {
     const filter: Record<string, unknown> = {
       status: RunEventStatus.PUBLISHED,
       archive: false,
     };
 
-    if (segment === 'upcoming') {
-      filter.isClosed = false;
-      filter.eventDate = { $gte: startOfTodayUtc() };
-    } else {
-      filter.isClosed = true;
+    this.applySegmentFilter(filter, segment, eventDate);
+
+    if (city) {
+      filter['location.city'] = buildCityFilterValue(city);
     }
 
     return filter;
   }
 
-  private sortForPublicSegment(segment: PublicRunEventSegment): Record<string, 1 | -1> {
+  private sortForPublicSegment(
+    segment: PublicRunEventSegment | undefined,
+  ): Record<string, 1 | -1> {
+    if (!segment) {
+      return { isClosed: 1, eventDate: 1, closedAt: -1 };
+    }
     if (segment === 'upcoming') {
       return { eventDate: 1 };
     }
@@ -141,14 +198,19 @@ export class RunEventsService {
   }
 
   async findPublic(
-    segment: PublicRunEventSegment = 'upcoming',
-    page = 1,
-    limit = 10,
-    lat?: number,
-    long?: number,
-    maxDistanceMeters?: number,
+    query: ListPublishedRunEventsDto,
   ): Promise<PaginatedResult<RunEventDocument>> {
-    const filter = this.buildPublicFilter(segment);
+    const {
+      segment,
+      page = 1,
+      limit = 10,
+      lat,
+      long,
+      maxDistanceMeters,
+      eventDate,
+      city,
+    } = query;
+    const filter = this.buildPublicFilter(segment, eventDate, city);
     const sort = this.sortForPublicSegment(segment);
 
     if (lat !== undefined && long !== undefined) {

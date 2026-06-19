@@ -4,6 +4,7 @@ import {
   CustomQuestionType,
   RunEventStatus,
 } from '../interfaces/run-event.interface';
+import { toEventDateRangeFilter } from '../utility/run-events-list-filter.util';
 
 const LocationInputSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -93,12 +94,32 @@ const GeoQuerySchema = z
     }
   });
 
-const ListRunEventsSchema = GeoQuerySchema.extend({
+const ListFilterSchema = GeoQuerySchema.extend({
+  eventDate: z.coerce
+    .date()
+    .optional()
+    .transform((date) => (date ? toEventDateRangeFilter(date) : undefined)),
+  city: z.string().trim().min(1).optional(),
+}).superRefine((data, ctx) => {
+  const hasGeo = data.lat !== undefined && data.long !== undefined;
+  const hasCity = data.city !== undefined;
+
+  if (hasCity && hasGeo) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'city cannot be combined with lat and long',
+      path: ['city'],
+    });
+  }
+});
+
+const ListRunEventsSchema = ListFilterSchema.extend({
   status: z
     .enum(
       Object.values(RunEventStatus) as [RunEventStatus, ...RunEventStatus[]],
     )
     .optional(),
+  segment: z.enum(['upcoming', 'closed']).optional(),
   isClosed: z.coerce.boolean().optional(),
   archive: z.coerce.boolean().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -107,8 +128,8 @@ const ListRunEventsSchema = GeoQuerySchema.extend({
 
 export class ListRunEventsDto extends createZodDto(ListRunEventsSchema) {}
 
-const ListPublishedRunEventsSchema = GeoQuerySchema.extend({
-  segment: z.enum(['upcoming', 'closed']).default('upcoming'),
+const ListPublishedRunEventsSchema = ListFilterSchema.extend({
+  segment: z.enum(['upcoming', 'closed']).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(10),
 });
