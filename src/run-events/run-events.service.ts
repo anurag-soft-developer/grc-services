@@ -320,6 +320,9 @@ export class RunEventsService {
 
     if (location) {
       event.location = RunEventsUtility.buildLocation(location);
+      if (location.lat === undefined || location.long === undefined) {
+        event.set('location.geo', undefined);
+      }
       event.markModified('location');
     }
 

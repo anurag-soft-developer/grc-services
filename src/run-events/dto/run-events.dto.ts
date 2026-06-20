@@ -6,13 +6,26 @@ import {
 } from '../interfaces/run-event.interface';
 import { toEventDateRangeFilter } from '../utility/run-events-list-filter.util';
 
-const LocationInputSchema = z.object({
-  lat: z.number().min(-90).max(90),
-  long: z.number().min(-180).max(180),
-  city: z.string().trim().min(1),
-  state: z.string().trim().min(1),
-  address: z.string().trim().min(1),
-});
+const LocationInputSchema = z
+  .object({
+    address: z.string().trim().min(1),
+    city: z.string().trim().min(1),
+    state: z.string().trim().min(1),
+    lat: z.number().min(-90).max(90).optional(),
+    long: z.number().min(-180).max(180).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasLat = data.lat !== undefined;
+    const hasLong = data.long !== undefined;
+
+    if (hasLat !== hasLong) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'lat and long must be provided together',
+        path: ['lat'],
+      });
+    }
+  });
 
 const CustomQuestionSchema = z
   .object({

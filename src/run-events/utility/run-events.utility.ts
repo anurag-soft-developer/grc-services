@@ -11,15 +11,20 @@ import {
 
 export class RunEventsUtility {
   static buildLocation(input: IRunEventLocationInput): RunEventLocation {
-    return {
+    const location: RunEventLocation = {
       city: input.city,
       state: input.state,
       address: input.address,
-      geo: {
+    };
+
+    if (input.lat !== undefined && input.long !== undefined) {
+      location.geo = {
         type: 'Point',
         coordinates: [input.long, input.lat],
-      },
-    };
+      };
+    }
+
+    return location;
   }
 
   static validateCustomQuestionKeys(keys: string[]): void {

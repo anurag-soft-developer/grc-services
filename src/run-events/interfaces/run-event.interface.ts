@@ -22,14 +22,14 @@ export interface IRunEventLocation {
   city: string;
   state: string;
   address: string;
-  lat: number;
-  long: number;
-  geo: IGeoPoint;
+  lat?: number;
+  long?: number;
+  geo?: IGeoPoint;
 }
 
 export interface IRunEventLocationInput {
-  lat: number;
-  long: number;
+  lat?: number;
+  long?: number;
   city: string;
   state: string;
   address: string;

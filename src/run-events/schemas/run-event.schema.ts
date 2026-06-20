@@ -63,18 +63,18 @@ export class RunEventLocation implements Omit<IRunEventLocation, 'lat' | 'long'>
   @Prop({ type: String, required: true, trim: true })
   address!: string;
 
-  @Prop({ type: GeoPointSchema, required: true })
-  geo!: GeoPoint;
+  @Prop({ type: GeoPointSchema, required: false })
+  geo?: GeoPoint;
 }
 
 const RunEventLocationSchema = SchemaFactory.createForClass(RunEventLocation);
 
 RunEventLocationSchema.virtual('lat').get(function (this: RunEventLocation) {
-  return this.geo.coordinates[1];
+  return this.geo?.coordinates[1];
 });
 
 RunEventLocationSchema.virtual('long').get(function (this: RunEventLocation) {
-  return this.geo.coordinates[0];
+  return this.geo?.coordinates[0];
 });
 
 RunEventLocationSchema.set('toJSON', { virtuals: true });
@@ -203,4 +203,4 @@ export class RunEvent extends Document {
 export const RunEventSchema = SchemaFactory.createForClass(RunEvent);
 
 RunEventSchema.index({ status: 1, isClosed: 1, archive: 1, eventDate: 1 });
-RunEventSchema.index({ 'location.geo': '2dsphere' });
+RunEventSchema.index({ 'location.geo': '2dsphere' }, { sparse: true });

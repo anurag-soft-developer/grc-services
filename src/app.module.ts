@@ -15,6 +15,7 @@ import { RunEventParticipantsModule } from './run-event-participants/run-event-p
 import { StorageModule } from './storage/storage.module';
 import { WebhookModule } from './webhook/webhook.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { PlacesModule } from './places/places.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     StorageModule,
     WebhookModule,
     DashboardModule,
+    PlacesModule,
   ],
   controllers: [AppController],
   providers: [
