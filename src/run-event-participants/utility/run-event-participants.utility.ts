@@ -2,6 +2,11 @@ import { NotFoundException } from '@nestjs/common';
 import { Model } from 'mongoose';
 import type { IRajorpayOrder } from '../../core/interfaces/rajorpay.interface';
 import { RajorpayService } from '../../core/services/rajorpay/rajorpay.service';
+import type { EventDateRangeFilter } from '../../run-events/utility/run-events-list-filter.util';
+import {
+  buildCityFilterValue,
+  startOfTodayUtc,
+} from '../../run-events/utility/run-events-list-filter.util';
 import type { IUser } from '../../users/interfaces/user.interface';
 import { SaveParticipantDraftDto } from '../dto/run-event-participants.dto';
 import {
@@ -45,6 +50,15 @@ export class RunEventParticipantsUtility {
       };
       participant.markModified('customQuestionResponses');
     }
+  }
+
+  static applyUserSnapshot(
+    participant: RunEventParticipantDocument,
+    user: Pick<IUser, 'fullName' | 'email' | 'phone'>,
+  ): void {
+    participant.fullName = user.fullName?.trim() || undefined;
+    participant.email = user.email.trim();
+    participant.phone = user.phone?.trim() || undefined;
   }
 
   static applyFreeSubmissionFields(
@@ -277,4 +291,57 @@ export class RunEventParticipantsUtility {
       callbackUrl,
     };
   }
+}
+
+export type MyRegistrationsSegment = 'upcoming' | 'closed';
+
+export interface MyRegistrationsListFilters {
+  segment?: MyRegistrationsSegment;
+  eventDate?: EventDateRangeFilter;
+  city?: string;
+}
+
+export function needsEventJoinForMyRegistrations(
+  filters: MyRegistrationsListFilters,
+): boolean {
+  return (
+    filters.segment !== undefined ||
+    filters.eventDate !== undefined ||
+    filters.city !== undefined
+  );
+}
+
+export function buildEventMatchForMyRegistrations(
+  filters: MyRegistrationsListFilters,
+): Record<string, unknown> {
+  const match: Record<string, unknown> = {
+    archive: { $ne: true },
+  };
+
+  if (filters.segment === 'upcoming') {
+    match.isClosed = { $ne: true };
+    match.eventDate = filters.eventDate ?? { $gte: startOfTodayUtc() };
+  } else if (filters.segment === 'closed') {
+    match.isClosed = true;
+    if (filters.eventDate) {
+      match.eventDate = filters.eventDate;
+    }
+  } else if (filters.eventDate) {
+    match.eventDate = filters.eventDate;
+  }
+
+  if (filters.city) {
+    match['location.city'] = buildCityFilterValue(filters.city);
+  }
+
+  return match;
+}
+
+export function sortForMyRegistrations(
+  filters: MyRegistrationsListFilters,
+): Record<string, 1 | -1> {
+  if (filters.segment === 'closed') {
+    return { 'event.closedAt': -1, 'event.eventDate': -1 };
+  }
+  return { 'event.eventDate': 1 };
 }

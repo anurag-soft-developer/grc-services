@@ -1,5 +1,7 @@
 import { createZodDto , type ZodDto} from 'nestjs-zod';
 import { z } from 'zod';
+import { toEventDateRangeFilter } from '../../run-events/utility/run-events-list-filter.util';
+import { PaymentStatus } from '../interfaces/run-event-participant.interface';
 
 const CustomQuestionResponsesSchema = z.record(
   z.string(),
@@ -21,12 +23,27 @@ export class SubmitParticipantDto extends createZodDto(
 const ListParticipantsSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(10),
+  search: z.string().trim().min(1).optional(),
+  paymentStatus: z
+    .enum(
+      Object.values(PaymentStatus) as [PaymentStatus, ...PaymentStatus[]],
+    )
+    .optional(),
+  submittedAt: z.coerce
+    .date()
+    .optional()
+    .transform((date) => (date ? toEventDateRangeFilter(date) : undefined)),
 });
 
 export class ListParticipantsDto extends createZodDto(ListParticipantsSchema) {}
 
 const ListMyParticipantsSchema = ListParticipantsSchema.extend({
-  segment: z.enum(['all', 'upcoming']).default('all'),
+  segment: z.enum(['upcoming', 'closed']).optional(),
+  eventDate: z.coerce
+    .date()
+    .optional()
+    .transform((date) => (date ? toEventDateRangeFilter(date) : undefined)),
+  city: z.string().trim().min(1).optional(),
 });
 
 export class ListMyParticipantsDto extends createZodDto(

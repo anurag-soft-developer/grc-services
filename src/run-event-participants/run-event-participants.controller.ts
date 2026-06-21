@@ -70,7 +70,7 @@ export class RunEventParticipantsController {
     @CurrentUser() user: IUser,
     @Body() dto: SubmitParticipantDto,
   ) {
-    return this.participantsService.submit(eventId, user._id.toString(), dto);
+    return this.participantsService.submit(eventId, user, dto);
   }
 
   @Post('run-events/:eventId/participants/draft/create-order')
@@ -124,7 +124,11 @@ export class RunEventParticipantsController {
       user._id.toString(),
       query.page,
       query.limit,
-      query.segment,
+      {
+        segment: query.segment,
+        eventDate: query.eventDate,
+        city: query.city,
+      },
     );
   }
 
@@ -138,6 +142,11 @@ export class RunEventParticipantsController {
       eventId,
       query.page,
       query.limit,
+      {
+        search: query.search,
+        paymentStatus: query.paymentStatus,
+        submittedAt: query.submittedAt,
+      },
     );
   }
 

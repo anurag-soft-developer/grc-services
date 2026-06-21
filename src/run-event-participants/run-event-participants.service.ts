@@ -32,21 +32,25 @@ import {
   RunEventParticipant,
   RunEventParticipantDocument,
 } from './schemas/run-event-participant.schema';
-import { RunEventParticipantsUtility } from './utility/run-event-participants.utility';
+import {
+  RunEventParticipantsUtility,
+  buildEventMatchForMyRegistrations,
+  needsEventJoinForMyRegistrations,
+  sortForMyRegistrations,
+  type MyRegistrationsListFilters,
+} from './utility/run-event-participants.utility';
 import { RunEventParticipantsValidationUtility } from './utility/run-event-participants.validation.utility';
-
-function startOfTodayUtc(): Date {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
+import {
+  buildEventParticipantsBaseMatch,
+  type EventParticipantsListFilters,
+} from './utility/run-event-participants-list-filter.util';
 
 @Injectable()
 export class RunEventParticipantsService {
   static populateOptions: PopulateOptions[] = [
     {
       path: 'userId',
-      select: userSelectFields,
+      select: `${userSelectFields} phone`,
     },
     {
       path: 'runEventId',
@@ -167,9 +171,10 @@ export class RunEventParticipantsService {
 
   async submit(
     runEventId: string,
-    userId: string,
+    user: IUser,
     dto: SubmitParticipantDto,
   ): Promise<RunEventParticipantDocument> {
+    const userId = user._id.toString();
     const participant =
       await RunEventParticipantsUtility.findDraftByEventAndUser(
         this.participantModel,
@@ -196,6 +201,8 @@ export class RunEventParticipantsService {
     await this.runEventsService.reserveRegistrationSlot(runEventId);
 
     try {
+      RunEventParticipantsUtility.applyUserSnapshot(participant, user);
+
       if (event.price === 0) {
         RunEventParticipantsUtility.applyFreeSubmissionFields(participant);
       } else {
@@ -454,15 +461,13 @@ export class RunEventParticipantsService {
     runEventId: string,
     page = 1,
     limit = 10,
+    filters: EventParticipantsListFilters = {},
   ): Promise<PaginatedResult<RunEventParticipantDocument>> {
     await this.runEventsService.findById(runEventId);
 
-    const filter = {
-      runEventId,
-      status: ParticipantStatus.SUBMITTED,
-    };
-
+    const filter = buildEventParticipantsBaseMatch(runEventId, filters);
     const skip = (page - 1) * limit;
+
     const [participants, total] = await Promise.all([
       this.participantModel
         .find(filter)
@@ -479,15 +484,15 @@ export class RunEventParticipantsService {
 
   async getEventAnalytics(runEventId: string): Promise<IRunEventAnalytics> {
     const event = await this.runEventsService.findById(runEventId);
-    const objectId = new Types.ObjectId(runEventId);
+    const runEventObjectId = new Types.ObjectId(runEventId);
 
     const [statusAgg, paymentAgg, revenueAgg] = await Promise.all([
       this.participantModel.aggregate<{ _id: string; count: number }>([
-        { $match: { runEventId: objectId } },
+        { $match: { runEventId: runEventObjectId } },
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
       this.participantModel.aggregate<{ _id: string; count: number }>([
-        { $match: { runEventId: objectId } },
+        { $match: { runEventId: runEventObjectId } },
         { $group: { _id: '$paymentStatus', count: { $sum: 1 } } },
       ]),
       this.participantModel.aggregate<{
@@ -496,7 +501,7 @@ export class RunEventParticipantsService {
       }>([
         {
           $match: {
-            runEventId: objectId,
+            runEventId: runEventObjectId,
             paymentStatus: PaymentStatus.PAID,
           },
         },
@@ -593,46 +598,48 @@ export class RunEventParticipantsService {
     userId: string,
     page = 1,
     limit = 10,
-    segment: 'all' | 'upcoming' = 'all',
+    filters: MyRegistrationsListFilters = {},
   ): Promise<PaginatedResult<RunEventParticipantDocument>> {
-    if (segment === 'upcoming') {
-      return this.listMineUpcoming(userId, page, limit);
+    if (!needsEventJoinForMyRegistrations(filters)) {
+      const filter = {
+        userId,
+        status: {
+          $in: [
+            ParticipantStatus.SUBMITTED,
+            ParticipantStatus.PENDING_PAYMENT,
+          ],
+        },
+      };
+
+      const skip = (page - 1) * limit;
+      const [participants, total] = await Promise.all([
+        this.participantModel
+          .find(filter)
+          .sort({ updatedAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .populate(RunEventParticipantsService.populateOptions)
+          .exec(),
+        this.participantModel.countDocuments(filter).exec(),
+      ]);
+
+      return buildPaginatedResult(participants, total, page, limit);
     }
 
-    const filter = {
-      userId,
-      status: {
-        $in: [
-          ParticipantStatus.SUBMITTED,
-          ParticipantStatus.PENDING_PAYMENT,
-        ],
-      },
-    };
-
-    const skip = (page - 1) * limit;
-    const [participants, total] = await Promise.all([
-      this.participantModel
-        .find(filter)
-        .sort({ updatedAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .populate(RunEventParticipantsService.populateOptions)
-        .exec(),
-      this.participantModel.countDocuments(filter).exec(),
-    ]);
-
-    return buildPaginatedResult(participants, total, page, limit);
+    return this.listMineWithEventFilters(userId, page, limit, filters);
   }
 
-  private async listMineUpcoming(
+  private async listMineWithEventFilters(
     userId: string,
     page: number,
     limit: number,
+    filters: MyRegistrationsListFilters,
   ): Promise<PaginatedResult<RunEventParticipantDocument>> {
     const skip = (page - 1) * limit;
-    const startOfToday = startOfTodayUtc();
     const eventsCollection =
       this.runEventsService.getEventsCollectionName();
+    const eventMatch = buildEventMatchForMyRegistrations(filters);
+    const sort = sortForMyRegistrations(filters);
 
     const [aggregateResult] = await this.participantModel.aggregate<{
       data: Array<{ _id: Types.ObjectId }>;
@@ -640,9 +647,7 @@ export class RunEventParticipantsService {
     }>([
       {
         $match: {
-          $expr: {
-            $eq: [{ $toString: '$userId' }, userId],
-          },
+          userId: new Types.ObjectId(userId),
           status: {
             $in: [
               ParticipantStatus.SUBMITTED,
@@ -658,15 +663,8 @@ export class RunEventParticipantsService {
           pipeline: [
             {
               $match: {
-                $expr: {
-                  $eq: [
-                    { $toString: '$_id' },
-                    { $toString: '$$runEventId' },
-                  ],
-                },
-                eventDate: { $gte: startOfToday },
-                isClosed: { $ne: true },
-                archive: { $ne: true },
+                $expr: { $eq: ['$_id', '$$runEventId'] },
+                ...eventMatch,
               },
             },
           ],
@@ -675,7 +673,7 @@ export class RunEventParticipantsService {
       },
       { $match: { 'event.0': { $exists: true } } },
       { $set: { event: { $first: '$event' } } },
-      { $sort: { 'event.eventDate': 1 } },
+      { $sort: sort },
       {
         $facet: {
           data: [{ $skip: skip }, { $limit: limit }],

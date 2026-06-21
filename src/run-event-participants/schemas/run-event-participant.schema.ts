@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 import { RunEvent } from '../../run-events/schemas/run-event.schema';
 import { User } from '../../users/schemas/user.schema';
 import {
@@ -43,11 +43,20 @@ export type RunEventParticipantDocument = Omit<
   },
 })
 export class RunEventParticipant extends Document {
-  @Prop({ type: Types.ObjectId, ref: RunEvent.name, required: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: RunEvent.name, required: true })
   runEventId!: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: User.name, required: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: User.name, required: true })
   userId!: Types.ObjectId;
+
+  @Prop({ type: String, trim: true })
+  fullName?: string;
+
+  @Prop({ type: String, trim: true, lowercase: true })
+  email?: string;
+
+  @Prop({ type: String, trim: true })
+  phone?: string;
 
   @Prop({
     type: Object,
@@ -141,3 +150,4 @@ RunEventParticipantSchema.index({ razorpayOrderId: 1 });
 RunEventParticipantSchema.index({ razorpayPaymentLinkId: 1 });
 RunEventParticipantSchema.index({ paymentId: 1 });
 RunEventParticipantSchema.index({ status: 1, paymentExpiresAt: 1 });
+RunEventParticipantSchema.index({ runEventId: 1, status: 1, submittedAt: -1 });

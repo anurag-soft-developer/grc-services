@@ -32,6 +32,9 @@ export interface IRunEventParticipant {
   _id: string;
   runEventId: string;
   userId: string;
+  fullName?: string;
+  email?: string;
+  phone?: string;
   customQuestionResponses: Record<string, CustomQuestionResponseValue>;
   status: ParticipantStatus;
   totalAmount?: number;
