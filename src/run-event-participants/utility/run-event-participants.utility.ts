@@ -227,7 +227,7 @@ export class RunEventParticipantsUtility {
     user: IUser,
     runEventId: string,
     participantId: string,
-    order: IRajorpayOrder,
+    amountInPaise: number,
     callbackUrl: string,
     expireBy: number,
   ): Promise<{ id: string; shortUrl: string; callbackUrl: string }> {
@@ -241,7 +241,7 @@ export class RunEventParticipantsUtility {
       );
       if (
         existingLink &&
-        rajorpayService.isPaymentLinkReusable(existingLink, order.amount)
+        rajorpayService.isPaymentLinkReusable(existingLink, amountInPaise)
       ) {
         return {
           id: participant.razorpayPaymentLinkId,
@@ -256,7 +256,7 @@ export class RunEventParticipantsUtility {
     }
 
     const link = await rajorpayService.createPaymentLink({
-      amountInPaise: order.amount,
+      amountInPaise,
       referenceId: `participant_${participantId}`,
       description: 'Event registration payment',
       callbackUrl,
@@ -269,7 +269,6 @@ export class RunEventParticipantsUtility {
       notes: {
         participantId,
         eventId: runEventId,
-        razorpayOrderId: order.id,
       },
     });
 

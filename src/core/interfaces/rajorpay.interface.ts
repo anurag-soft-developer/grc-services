@@ -11,6 +11,24 @@ export interface IRajorpayOrder {
   created_at: number;
 }
 
+export interface IRajorpayPayment {
+  id: string;
+  entity: string;
+  status: string;
+  order_id?: string;
+}
+
+export interface IRajorpayPaymentCollection {
+  entity: string;
+  count: number;
+  items: IRajorpayPayment[];
+}
+
+export interface IRajorpayPaymentLinkPayment {
+  payment_id: string;
+  status: string;
+}
+
 export interface IRajorpayPaymentLink {
   id: string;
   entity: string;
@@ -24,6 +42,12 @@ export interface IRajorpayPaymentLink {
   status: string;
   expire_by?: number;
   created_at: number;
+  payments?: IRajorpayPaymentLinkPayment[];
+}
+
+export interface IRajorpayCapturedPayment {
+  orderId: string;
+  paymentId: string;
 }
 
 export interface IRajorpayPaymentLinkCustomer {

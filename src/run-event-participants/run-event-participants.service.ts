@@ -241,7 +241,7 @@ export class RunEventParticipantsService {
     paymentLink = false,
   ): Promise<{
     participant: RunEventParticipantDocument;
-    order: IRajorpayOrder;
+    order?: IRajorpayOrder;
     paymentLink?: {
       id: string;
       shortUrl: string;
@@ -269,22 +269,26 @@ export class RunEventParticipantsService {
     }
 
     const participantId = participant._id.toString();
-    const order = await RunEventParticipantsUtility.resolveOrCreateRazorpayOrder(
-      this.rajorpayService,
-      participant,
-      participantId,
-    );
-
-    const populatedParticipant = (await participant.populate(
-      RunEventParticipantsService.populateOptions,
-    )) as RunEventParticipantDocument;
 
     if (!paymentLink) {
+      const order = await RunEventParticipantsUtility.resolveOrCreateRazorpayOrder(
+        this.rajorpayService,
+        participant,
+        participantId,
+      );
+
+      const populatedParticipant = (await participant.populate(
+        RunEventParticipantsService.populateOptions,
+      )) as RunEventParticipantDocument;
+
       return {
         participant: populatedParticipant,
         order,
       };
     }
+
+    // Web: payment link only — no draft order; razorpayOrderId is set after capture.
+    participant.razorpayOrderId = undefined;
 
     const callbackUrl = `${config.FRONTEND_URL}/payments/razorpay/callback?eventId=${encodeURIComponent(runEventId)}&participantId=${encodeURIComponent(participantId)}`;
     const minExpireBy =
@@ -297,6 +301,7 @@ export class RunEventParticipantsService {
       minExpireBy,
     );
 
+    const amountInPaise = Math.round(participant.totalAmount * 100);
     const resolvedPaymentLink =
       await RunEventParticipantsUtility.resolveOrCreateRazorpayPaymentLink(
         this.rajorpayService,
@@ -304,7 +309,7 @@ export class RunEventParticipantsService {
         user,
         runEventId,
         participantId,
-        order,
+        amountInPaise,
         callbackUrl,
         expireBy,
       );
@@ -315,7 +320,6 @@ export class RunEventParticipantsService {
 
     return {
       participant: participantWithLink,
-      order,
       paymentLink: resolvedPaymentLink,
     };
   }
@@ -384,18 +388,14 @@ export class RunEventParticipantsService {
       throw new BadRequestException('Invalid payment signature');
     }
 
-    const orderId = participant.razorpayOrderId;
-    if (!orderId) {
-      throw new BadRequestException('Payment order not found for this registration');
-    }
-
-    await RunEventParticipantsUtility.confirmPaidParticipant(
-      this.participantModel,
+    const confirmed = await this.confirmPaidParticipantFromPaymentLink(
       participant,
-      orderId,
+      dto.razorpay_payment_link_id,
       dto.razorpay_payment_id,
-      () => this.allocateBookingId(),
     );
+    if (!confirmed) {
+      throw new BadRequestException('Payment was not completed');
+    }
 
     return (await participant.populate(
       RunEventParticipantsService.populateOptions,
@@ -610,6 +610,68 @@ export class RunEventParticipantsService {
     return participant;
   }
 
+  async syncPayment(
+    id: string,
+    userId: string,
+    isAdmin: boolean,
+  ): Promise<RunEventParticipantDocument> {
+    const participant = await this.findByIdForUser(id, userId, isAdmin);
+
+    if (participant.paymentStatus === PaymentStatus.PAID) {
+      return participant;
+    }
+
+    if (participant.status !== ParticipantStatus.PENDING_PAYMENT) {
+      return participant;
+    }
+
+    if (!participant.razorpayOrderId && !participant.razorpayPaymentLinkId) {
+      return participant;
+    }
+
+    if (participant.razorpayPaymentLinkId) {
+      const pendingParticipant = await this.participantModel.findById(id).exec();
+      if (
+        pendingParticipant &&
+        pendingParticipant.paymentStatus !== PaymentStatus.PAID &&
+        pendingParticipant.status === ParticipantStatus.PENDING_PAYMENT
+      ) {
+        await this.confirmPaidParticipantFromPaymentLink(
+          pendingParticipant,
+          participant.razorpayPaymentLinkId,
+        );
+      }
+      return this.findById(id);
+    }
+
+    if (participant.razorpayOrderId) {
+      const resolved =
+        await this.rajorpayService.resolveCapturedPaymentForOrder(
+          participant.razorpayOrderId,
+        );
+
+      if (resolved) {
+        const pendingParticipant = await this.participantModel.findById(id).exec();
+        if (
+          pendingParticipant &&
+          pendingParticipant.paymentStatus !== PaymentStatus.PAID &&
+          pendingParticipant.status === ParticipantStatus.PENDING_PAYMENT
+        ) {
+          await RunEventParticipantsUtility.confirmPaidParticipant(
+            this.participantModel,
+            pendingParticipant,
+            resolved.orderId,
+            resolved.paymentId,
+            () => this.allocateBookingId(),
+          );
+        }
+        return this.findById(id);
+      }
+    }
+
+    return participant;
+  }
+
   async listMine(
     userId: string,
     page = 1,
@@ -727,15 +789,20 @@ export class RunEventParticipantsService {
     orderId: string,
     razorpayPaymentId: string,
   ): Promise<void> {
-    const participant = await this.participantModel
-      .findOne({ razorpayOrderId: orderId })
-      .exec();
+    const participant =
+      (await this.participantModel.findOne({ razorpayOrderId: orderId }).exec()) ??
+      (await this.findPendingParticipantByPaymentLinkPayment(
+        orderId,
+        razorpayPaymentId,
+      ));
+
     if (!participant || participant.paymentStatus === PaymentStatus.PAID) {
       return;
     }
     if (participant.status !== ParticipantStatus.PENDING_PAYMENT) {
       return;
     }
+
     await RunEventParticipantsUtility.confirmPaidParticipant(
       this.participantModel,
       participant,
@@ -743,6 +810,91 @@ export class RunEventParticipantsService {
       razorpayPaymentId,
       () => this.allocateBookingId(),
     );
+  }
+
+  async confirmPaidParticipantByPaymentLinkId(
+    paymentLinkId: string,
+    razorpayPaymentId: string,
+  ): Promise<void> {
+    const participant = await this.participantModel
+      .findOne({
+        razorpayPaymentLinkId: paymentLinkId,
+        status: ParticipantStatus.PENDING_PAYMENT,
+      })
+      .exec();
+
+    if (!participant || participant.paymentStatus === PaymentStatus.PAID) {
+      return;
+    }
+
+    await this.confirmPaidParticipantFromPaymentLink(
+      participant,
+      paymentLinkId,
+      razorpayPaymentId,
+    );
+  }
+
+  private async confirmPaidParticipantFromPaymentLink(
+    participant: RunEventParticipantDocument,
+    paymentLinkId: string,
+    razorpayPaymentId?: string,
+  ): Promise<boolean> {
+    if (participant.paymentStatus === PaymentStatus.PAID) {
+      return true;
+    }
+    if (participant.status !== ParticipantStatus.PENDING_PAYMENT) {
+      return false;
+    }
+
+    const resolved =
+      await this.rajorpayService.resolveCapturedPaymentForLink(paymentLinkId);
+    if (!resolved) {
+      return false;
+    }
+
+    const paymentId = razorpayPaymentId ?? resolved.paymentId;
+
+    await RunEventParticipantsUtility.confirmPaidParticipant(
+      this.participantModel,
+      participant,
+      resolved.orderId,
+      paymentId,
+      () => this.allocateBookingId(),
+    );
+
+    return true;
+  }
+
+  private async findPendingParticipantByPaymentLinkPayment(
+    orderId: string,
+    razorpayPaymentId: string,
+  ): Promise<RunEventParticipantDocument | null> {
+    const candidates = await this.participantModel
+      .find({
+        status: ParticipantStatus.PENDING_PAYMENT,
+        paymentStatus: { $ne: PaymentStatus.PAID },
+        razorpayPaymentLinkId: { $exists: true, $ne: null },
+      })
+      .exec();
+
+    for (const candidate of candidates) {
+      const linkId = candidate.razorpayPaymentLinkId;
+      if (!linkId) {
+        continue;
+      }
+
+      const resolved =
+        await this.rajorpayService.resolveCapturedPaymentForLink(linkId);
+      if (
+        resolved &&
+        resolved.paymentId === razorpayPaymentId &&
+        resolved.orderId === orderId
+      ) {
+        return candidate;
+      }
+    }
+
+    return null;
   }
 
   async applyFailedPaymentByOrderId(orderId: string): Promise<void> {

@@ -3,7 +3,10 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { config } from '../../config/env.config';
 import {
   ICreateRajorpayPaymentLinkParams,
+  IRajorpayCapturedPayment,
   IRajorpayOrder,
+  IRajorpayPayment,
+  IRajorpayPaymentCollection,
   IRajorpayPaymentLink,
   IRajorpayPaymentLinkCustomer,
 } from '../../interfaces/rajorpay.interface';
@@ -85,6 +88,63 @@ export class RajorpayService {
     expectedAmountPaise: number,
   ): boolean {
     return link.status === 'created' && link.amount === expectedAmountPaise;
+  }
+
+  async getOrderPayments(orderId: string): Promise<IRajorpayPayment[]> {
+    try {
+      const collection = await this.apiRequest<IRajorpayPaymentCollection>(
+        `/v1/orders/${orderId}/payments`,
+        { method: 'GET' },
+      );
+      return collection.items ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  private findCapturedPayment(
+    payments: IRajorpayPayment[],
+  ): IRajorpayPayment | undefined {
+    return payments.find(
+      (payment) =>
+        payment.status === 'captured' || payment.status === 'authorized',
+    );
+  }
+
+  async resolveCapturedPaymentForOrder(
+    orderId: string,
+  ): Promise<IRajorpayCapturedPayment | null> {
+    const order = await this.getOrder(orderId);
+    if (!order || order.status !== 'paid') {
+      return null;
+    }
+
+    const payments = await this.getOrderPayments(orderId);
+    const captured = this.findCapturedPayment(payments);
+    if (!captured?.id) {
+      return null;
+    }
+
+    return { orderId, paymentId: captured.id };
+  }
+
+  async resolveCapturedPaymentForLink(
+    paymentLinkId: string,
+  ): Promise<IRajorpayCapturedPayment | null> {
+    const link = await this.getPaymentLink(paymentLinkId);
+    if (!link || link.status !== 'paid') {
+      return null;
+    }
+
+    const paymentId = link.payments?.find(
+      (payment) =>
+        payment.status === 'captured' || payment.status === 'authorized',
+    )?.payment_id;
+    if (!paymentId || !link.order_id) {
+      return null;
+    }
+
+    return { orderId: link.order_id, paymentId };
   }
 
   verifyPaymentLinkSignature(params: {

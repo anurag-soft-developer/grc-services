@@ -161,4 +161,17 @@ export class RunEventParticipantsController {
       user.role === UserRole.ADMIN,
     );
   }
+
+  @Post('run-event-participants/:id/sync-payment')
+  @HttpCode(HttpStatus.OK)
+  async syncPayment(
+    @Param('id') id: string,
+    @CurrentUser() user: IUser,
+  ) {
+    return this.participantsService.syncPayment(
+      id,
+      user._id.toString(),
+      user.role === UserRole.ADMIN,
+    );
+  }
 }

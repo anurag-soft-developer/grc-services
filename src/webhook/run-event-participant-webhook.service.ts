@@ -13,6 +13,11 @@ export class RunEventParticipantWebhookService {
     message: string;
   }> {
     const eventType = eventPayload.event;
+    if (eventType === 'payment_link.paid') {
+      await this.applyPaymentLinkPaidWebhook(eventPayload);
+      return { processed: true, message: `${eventType} processed` };
+    }
+
     if (eventType === 'payment.captured' || eventType === 'order.paid') {
       await this.applyCapturedPaymentWebhook(eventPayload);
       return { processed: true, message: `${eventType} processed` };
@@ -29,6 +34,33 @@ export class RunEventParticipantWebhookService {
     }
 
     return { processed: false, message: `Event ${eventType} ignored` };
+  }
+
+  private async applyPaymentLinkPaidWebhook(
+    payload: RazorpayWebhookPayloadDto,
+  ): Promise<void> {
+    const linkEntity = (
+      payload.payload?.payment_link as
+        | { entity?: Record<string, unknown> }
+        | undefined
+    )?.entity;
+    const paymentEntity = (
+      payload.payload?.payment as { entity?: Record<string, unknown> } | undefined
+    )?.entity;
+
+    const paymentLinkId =
+      typeof linkEntity?.id === 'string' ? linkEntity.id : undefined;
+    const paymentId =
+      typeof paymentEntity?.id === 'string' ? paymentEntity.id : undefined;
+
+    if (!paymentLinkId || !paymentId) {
+      return;
+    }
+
+    await this.participantsService.confirmPaidParticipantByPaymentLinkId(
+      paymentLinkId,
+      paymentId,
+    );
   }
 
   private async applyCapturedPaymentWebhook(
