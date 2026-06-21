@@ -39,12 +39,12 @@ export interface IRunEventParticipant {
   status: ParticipantStatus;
   totalAmount?: number;
   paymentStatus: PaymentStatus;
-  paymentId?: string;
+  razorpayPaymentId?: string;
   razorpayOrderId?: string;
   razorpayPaymentLinkId?: string;
   razorpayPaymentLinkShortUrl?: string;
   razorpayPaymentLinkCallbackUrl?: string;
-  invoiceId?: string;
+  bookingId?: number;
   paidAt?: Date;
   paymentExpiresAt?: Date;
   refundId?: string;

@@ -82,7 +82,7 @@ export class RunEventParticipant extends Document {
   paymentStatus!: PaymentStatus;
 
   @Prop({ type: String })
-  paymentId?: string;
+  razorpayPaymentId?: string;
 
   @Prop({ type: String })
   razorpayOrderId?: string;
@@ -96,8 +96,8 @@ export class RunEventParticipant extends Document {
   @Prop({ type: String })
   razorpayPaymentLinkCallbackUrl?: string;
 
-  @Prop({ type: String })
-  invoiceId?: string;
+  @Prop({ type: Number, min: 1 })
+  bookingId?: number;
 
   @Prop({ type: Date })
   paidAt?: Date;
@@ -148,6 +148,7 @@ RunEventParticipantSchema.index(
 
 RunEventParticipantSchema.index({ razorpayOrderId: 1 });
 RunEventParticipantSchema.index({ razorpayPaymentLinkId: 1 });
-RunEventParticipantSchema.index({ paymentId: 1 });
+RunEventParticipantSchema.index({ razorpayPaymentId: 1 });
+RunEventParticipantSchema.index({ bookingId: 1 }, { unique: true, sparse: true });
 RunEventParticipantSchema.index({ status: 1, paymentExpiresAt: 1 });
 RunEventParticipantSchema.index({ runEventId: 1, status: 1, submittedAt: -1 });

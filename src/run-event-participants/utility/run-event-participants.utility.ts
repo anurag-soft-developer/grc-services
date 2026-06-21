@@ -30,13 +30,18 @@ export class RunEventParticipantsUtility {
     return now;
   }
 
-  static generateInvoiceId(participantId: string): string {
-    const now = new Date();
-    const datePrefix = `${now.getFullYear()}${`${now.getMonth() + 1}`.padStart(
-      2,
-      '0',
-    )}${`${now.getDate()}`.padStart(2, '0')}`;
-    return `INV-${datePrefix}-${participantId.slice(-6).toUpperCase()}`;
+  static async applyFreeSubmissionFields(
+    participant: RunEventParticipantDocument,
+    allocateBookingId: () => Promise<number>,
+  ): Promise<void> {
+    participant.status = ParticipantStatus.SUBMITTED;
+    participant.paymentStatus = PaymentStatus.PAID;
+    participant.submittedAt = new Date();
+    participant.paidAt = new Date();
+    participant.paymentExpiresAt = undefined;
+    if (participant.bookingId == null) {
+      participant.bookingId = await allocateBookingId();
+    }
   }
 
   static applyDraftUpdate(
@@ -59,19 +64,6 @@ export class RunEventParticipantsUtility {
     participant.fullName = user.fullName?.trim() || undefined;
     participant.email = user.email.trim();
     participant.phone = user.phone?.trim() || undefined;
-  }
-
-  static applyFreeSubmissionFields(
-    participant: RunEventParticipantDocument,
-  ): void {
-    participant.status = ParticipantStatus.SUBMITTED;
-    participant.paymentStatus = PaymentStatus.PAID;
-    participant.submittedAt = new Date();
-    participant.paidAt = new Date();
-    participant.invoiceId = RunEventParticipantsUtility.generateInvoiceId(
-      participant._id.toString(),
-    );
-    participant.paymentExpiresAt = undefined;
   }
 
   static applyPendingPaymentFields(
@@ -170,6 +162,7 @@ export class RunEventParticipantsUtility {
     participant: RunEventParticipantDocument,
     razorpayOrderId: string,
     razorpayPaymentId: string,
+    allocateBookingId: () => Promise<number>,
   ): Promise<void> {
     if (participant.paymentStatus === PaymentStatus.PAID) {
       return;
@@ -183,15 +176,15 @@ export class RunEventParticipantsUtility {
     );
 
     participant.razorpayOrderId = razorpayOrderId;
-    participant.paymentId = razorpayPaymentId;
+    participant.razorpayPaymentId = razorpayPaymentId;
     participant.paymentStatus = PaymentStatus.PAID;
     participant.status = ParticipantStatus.SUBMITTED;
     participant.submittedAt = new Date();
     participant.paidAt = new Date();
     participant.paymentExpiresAt = undefined;
-    participant.invoiceId =
-      participant.invoiceId ||
-      RunEventParticipantsUtility.generateInvoiceId(participant._id.toString());
+    if (participant.bookingId == null) {
+      participant.bookingId = await allocateBookingId();
+    }
 
     await participant.save();
   }

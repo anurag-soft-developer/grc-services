@@ -21,26 +21,36 @@ export function buildEventParticipantsSearchMatch(
 ): Record<string, unknown> {
   const regex = buildSearchRegex(search);
   const escapedPattern = escapeRegex(search.trim());
-
-  return {
-    $or: [
-      { fullName: regex },
-      { email: regex },
-      { phone: regex },
-      { invoiceId: regex },
-      { razorpayOrderId: regex },
-      { paymentId: regex },
-      { razorpayPaymentLinkId: regex },
-      {
-        $expr: {
-          $regexMatch: {
-            input: { $toString: '$_id' },
-            regex: escapedPattern,
-            options: 'i',
-          },
+  const trimmedSearch = search.trim();
+  const parsedBookingId = Number(trimmedSearch);
+  const orConditions: Record<string, unknown>[] = [
+    { fullName: regex },
+    { email: regex },
+    { phone: regex },
+    { razorpayOrderId: regex },
+    { razorpayPaymentId: regex },
+    { razorpayPaymentLinkId: regex },
+    {
+      $expr: {
+        $regexMatch: {
+          input: { $toString: '$_id' },
+          regex: escapedPattern,
+          options: 'i',
         },
       },
-    ],
+    },
+  ];
+
+  if (
+    trimmedSearch.length > 0 &&
+    Number.isInteger(parsedBookingId) &&
+    parsedBookingId > 0
+  ) {
+    orConditions.push({ bookingId: parsedBookingId });
+  }
+
+  return {
+    $or: orConditions,
   };
 }
 

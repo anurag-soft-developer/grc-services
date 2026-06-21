@@ -90,7 +90,7 @@ export class RunEventParticipantWebhookService {
     }
 
     await this.participantsService.applyRefundWebhook({
-      paymentId,
+      razorpayPaymentId: paymentId,
       event: payload.event,
       refundId:
         typeof refundEntity.id === 'string' ? refundEntity.id : undefined,

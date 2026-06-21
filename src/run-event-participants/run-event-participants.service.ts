@@ -9,6 +9,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, PopulateOptions, Types } from 'mongoose';
 import type { IRajorpayOrder } from '../core/interfaces/rajorpay.interface';
 import { config } from '../core/config/env.config';
+import {
+  BookingCounterService,
+  RUN_EVENT_PARTICIPANT_BOOKING_COUNTER_KEY,
+} from '../core/services/booking-counter.service';
 import { RajorpayService } from '../core/services/rajorpay/rajorpay.service';
 import type { PaginatedResult } from '../core/interfaces/common';
 import { buildPaginatedResult } from '../core/utils/pagination.util';
@@ -63,7 +67,14 @@ export class RunEventParticipantsService {
     private participantModel: Model<RunEventParticipant>,
     private readonly runEventsService: RunEventsService,
     private readonly rajorpayService: RajorpayService,
+    private readonly bookingCounterService: BookingCounterService,
   ) {}
+
+  private allocateBookingId(): Promise<number> {
+    return this.bookingCounterService.nextSequence(
+      RUN_EVENT_PARTICIPANT_BOOKING_COUNTER_KEY,
+    );
+  }
 
   async getMyRegistrationForEvent(
     runEventId: string,
@@ -204,7 +215,10 @@ export class RunEventParticipantsService {
       RunEventParticipantsUtility.applyUserSnapshot(participant, user);
 
       if (event.price === 0) {
-        RunEventParticipantsUtility.applyFreeSubmissionFields(participant);
+        await RunEventParticipantsUtility.applyFreeSubmissionFields(
+          participant,
+          () => this.allocateBookingId(),
+        );
       } else {
         RunEventParticipantsUtility.applyPendingPaymentFields(
           participant,
@@ -380,6 +394,7 @@ export class RunEventParticipantsService {
       participant,
       orderId,
       dto.razorpay_payment_id,
+      () => this.allocateBookingId(),
     );
 
     return (await participant.populate(
@@ -450,6 +465,7 @@ export class RunEventParticipantsService {
       participant,
       dto.razorpay_order_id,
       dto.razorpay_payment_id,
+      () => this.allocateBookingId(),
     );
 
     return (await participant.populate(
@@ -709,7 +725,7 @@ export class RunEventParticipantsService {
 
   async confirmPaidParticipantByOrderId(
     orderId: string,
-    paymentId: string,
+    razorpayPaymentId: string,
   ): Promise<void> {
     const participant = await this.participantModel
       .findOne({ razorpayOrderId: orderId })
@@ -724,7 +740,8 @@ export class RunEventParticipantsService {
       this.participantModel,
       participant,
       orderId,
-      paymentId,
+      razorpayPaymentId,
+      () => this.allocateBookingId(),
     );
   }
 
@@ -747,13 +764,13 @@ export class RunEventParticipantsService {
   }
 
   async applyRefundWebhook(params: {
-    paymentId: string;
+    razorpayPaymentId: string;
     event: string;
     refundId?: string;
     refundAmount?: number;
   }): Promise<void> {
     const participant = await this.participantModel
-      .findOne({ paymentId: params.paymentId })
+      .findOne({ razorpayPaymentId: params.razorpayPaymentId })
       .exec();
     if (!participant) {
       return;
